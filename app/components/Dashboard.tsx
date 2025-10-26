@@ -1,6 +1,7 @@
 "use client";
+
 import React, { useState } from 'react';
-import { BarChart3, Clock, CheckCircle, XCircle, FileText, Calendar, RefreshCw } from 'lucide-react';
+import { BarChart3, Clock, CheckCircle, XCircle, FileText, Calendar, RefreshCw, ChevronUp, ChevronDown } from 'lucide-react';
 
 // Type definitions
 interface UserStoryData {
@@ -26,6 +27,8 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastFetched, setLastFetched] = useState<Date | null>(null);
+  const [sortField, setSortField] = useState<keyof UserStoryData | null>(null);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
   const timeWindows: TimeWindow[] = [
     { label: 'Last 1 Hour', hours: 1 },
@@ -70,8 +73,9 @@ const Dashboard = () => {
     
     try {
       const prefix = computePrefix(timeWindow);
-      const baseurl = process.env.NEXT_PUBLIC_API_BASE_URL||'http://localhost:8000/backend/product_owner';
-      const response = await fetch(`${baseurl}/session-storage/keys/${prefix}`);
+      // Use environment variable for API base URL
+      const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${baseUrl}/backend/product_owner/session-storage/keys/${prefix}`);
       
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
@@ -100,6 +104,32 @@ const Dashboard = () => {
     const type = d.user_story_type || 'Unknown';
     userStoryTypes[type] = (userStoryTypes[type] || 0) + 1;
   });
+
+  // Sorting function
+  const handleSort = (field: keyof UserStoryData) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+
+  // Get sorted data
+  const getSortedData = () => {
+    if (!sortField) return data;
+    
+    return [...data].sort((a, b) => {
+      const aValue = a[sortField] || '';
+      const bValue = b[sortField] || '';
+      
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1;
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+  };
+
+  const sortedData = getSortedData();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
@@ -233,20 +263,92 @@ const Dashboard = () => {
             <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl border border-slate-700 overflow-hidden">
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-slate-700/50">
-                    <tr>
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">Date</th>
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">Time</th>
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">Status</th>
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">Email</th>
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">Feature Title</th>
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">Story Type</th>
-                      <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">Session</th>
-                    </tr>
-                  </thead>
+                   <thead className="bg-slate-700/50">
+                     <tr>
+                       <th 
+                         className="px-6 py-4 text-left text-sm font-semibold text-slate-300 cursor-pointer hover:bg-slate-600/50 transition-colors select-none"
+                         onClick={() => handleSort('date')}
+                       >
+                         <div className="flex items-center gap-2">
+                           Date
+                           {sortField === 'date' && (
+                             sortDirection === 'asc' ? 
+                               <ChevronUp className="w-4 h-4" /> : 
+                               <ChevronDown className="w-4 h-4" />
+                           )}
+                         </div>
+                       </th>
+                       <th 
+                         className="px-6 py-4 text-left text-sm font-semibold text-slate-300 cursor-pointer hover:bg-slate-600/50 transition-colors select-none"
+                         onClick={() => handleSort('time')}
+                       >
+                         <div className="flex items-center gap-2">
+                           Time
+                           {sortField === 'time' && (
+                             sortDirection === 'asc' ? 
+                               <ChevronUp className="w-4 h-4" /> : 
+                               <ChevronDown className="w-4 h-4" />
+                           )}
+                         </div>
+                       </th>
+                       <th 
+                         className="px-6 py-4 text-left text-sm font-semibold text-slate-300 cursor-pointer hover:bg-slate-600/50 transition-colors select-none"
+                         onClick={() => handleSort('status')}
+                       >
+                         <div className="flex items-center gap-2">
+                           Status
+                           {sortField === 'status' && (
+                             sortDirection === 'asc' ? 
+                               <ChevronUp className="w-4 h-4" /> : 
+                               <ChevronDown className="w-4 h-4" />
+                           )}
+                         </div>
+                       </th>
+                       <th 
+                         className="px-6 py-4 text-left text-sm font-semibold text-slate-300 cursor-pointer hover:bg-slate-600/50 transition-colors select-none"
+                         onClick={() => handleSort('email_id')}
+                       >
+                         <div className="flex items-center gap-2">
+                           Email
+                           {sortField === 'email_id' && (
+                             sortDirection === 'asc' ? 
+                               <ChevronUp className="w-4 h-4" /> : 
+                               <ChevronDown className="w-4 h-4" />
+                           )}
+                         </div>
+                       </th>
+                       <th 
+                         className="px-6 py-4 text-left text-sm font-semibold text-slate-300 cursor-pointer hover:bg-slate-600/50 transition-colors select-none"
+                         onClick={() => handleSort('feature_title')}
+                       >
+                         <div className="flex items-center gap-2">
+                           Feature Title
+                           {sortField === 'feature_title' && (
+                             sortDirection === 'asc' ? 
+                               <ChevronUp className="w-4 h-4" /> : 
+                               <ChevronDown className="w-4 h-4" />
+                           )}
+                         </div>
+                       </th>
+                       <th 
+                         className="px-6 py-4 text-left text-sm font-semibold text-slate-300 cursor-pointer hover:bg-slate-600/50 transition-colors select-none"
+                         onClick={() => handleSort('user_story_type')}
+                       >
+                         <div className="flex items-center gap-2">
+                           Story Type
+                           {sortField === 'user_story_type' && (
+                             sortDirection === 'asc' ? 
+                               <ChevronUp className="w-4 h-4" /> : 
+                               <ChevronDown className="w-4 h-4" />
+                           )}
+                         </div>
+                       </th>
+                       <th className="px-6 py-4 text-left text-sm font-semibold text-slate-300">Session</th>
+                     </tr>
+                   </thead>
                   <tbody className="divide-y divide-slate-700">
-                    {data.map((row, idx) => (
-                        <tr key={`${row.session_id || 'no-session'}-${idx}-${row.email_id || 'no-email'}`} className="hover:bg-slate-700/30 transition-colors">
+                    {sortedData.map((row, idx) => (
+                      <tr key={`${row.session_id || 'no-session'}-${idx}-${row.email_id || 'no-email'}`} className="hover:bg-slate-700/30 transition-colors">
                         <td className="px-6 py-4 text-sm">
                           <div className="flex items-center gap-2">
                             <Calendar className="w-4 h-4 text-slate-400" />
