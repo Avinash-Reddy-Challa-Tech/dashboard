@@ -20,13 +20,10 @@ import { format } from "date-fns";
 
 // Import components
 import StatsOverview from './components/StatsOverview';
-import StatusBreakdown from './components/StatusBreakdown';
 import TopProjects from './components/TopProjects';
-import TopTemplates from './components/TopTemplates';
 import TopUsers from './components/TopUsers';
 import DataTable from './components/DataTable';
-import DayActivity from './components/Dayactivity';
-import HourActivity from './components/HourActivity';
+import DayActivity from './components/DayActivity';
 import CustomDateRangePicker from './components/CustomRangePicker';
 
 // Types
