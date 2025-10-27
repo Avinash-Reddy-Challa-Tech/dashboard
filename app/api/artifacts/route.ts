@@ -7,6 +7,7 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const fromTimeParam = searchParams.get('fromTime');
     const toTimeParam = searchParams.get('toTime');
+    const envParam = searchParams.get('env') || 'dev';
     
     if (!toTimeParam) {
       return NextResponse.json(
@@ -37,51 +38,15 @@ export async function GET(request: NextRequest) {
     const fromTs = fromTime ? Math.floor(fromTime.getTime() / 1000) : 0;
     const toTs = Math.floor(toTime.getTime() / 1000);
 
-    // Connect to MongoDB
-    const db = await getDatabase();
-    
-    // Debug: List all collections
-    const collections = await db.listCollections().toArray();
-    console.log('Available collections:', collections.map(c => c.name));
+    // Connect to MongoDB with appropriate URI based on env
+    const db = await getDatabase(envParam === 'prod' ? 'MONGODB_URI_PROD' : 'MONGODB_URI');
     
     const collection = db.collection('artifacts');
 
     const results = [];
 
-    // Debug logging
-    console.log('Time filter parameters:', { fromTime, toTime, fromTs, toTs });
-    console.log('MongoDB query parameters:', { fromTimeParam, toTimeParam });
-
-    // First, let's check if the collection has any documents at all
-    const totalCount = await collection.countDocuments({});
-    console.log('Total documents in artifacts collection:', totalCount);
-    
-    // Check documents with created_at field
-    const createdAtCount = await collection.countDocuments({ created_at: { $exists: true } });
-    console.log('Documents with created_at field:', createdAtCount);
-    
-    // Check documents with non-null created_at
-    const validCreatedAtCount = await collection.countDocuments({ 
-      created_at: { $exists: true, $nin: [null, ""] } 
-    });
-    console.log('Documents with valid created_at field:', validCreatedAtCount);
-    
-    // Get a sample document to see the structure
-    const sampleDoc = await collection.findOne({});
-    if (sampleDoc) {
-      console.log('Sample document structure:', {
-        keys: Object.keys(sampleDoc),
-        created_at: sampleDoc.created_at,
-        createdAt: sampleDoc.createdAt,
-        timestamp: sampleDoc.timestamp,
-        date: sampleDoc.date
-      });
-    } else {
-      console.log('No documents found in collection');
-    }
-
     // Use MongoDB aggregation pipeline for proper date range filtering
-    const pipeline = [
+    const pipeline: any[] = [
       // Stage 1: Match documents with valid created_at field
       {
         $match: {
@@ -133,16 +98,10 @@ export async function GET(request: NextRequest) {
       }
     ];
 
-    console.log('MongoDB aggregation pipeline:', JSON.stringify(pipeline, null, 2));
-
     const cursor = collection.aggregate(pipeline);
     
-    let processedDocs = 0;
-
     for await (const doc of cursor) {
-      processedDocs++;
-      
-      // Parse created_at for display formatting (filtering already done in aggregation)
+      // Parse created_at for display formatting
       const created_at_str = doc.created_at || '';
       let date_str = null;
       let time_str = null;
@@ -160,21 +119,31 @@ export async function GET(request: NextRequest) {
         }
       }
       
-      // Extract nested data from artifactData
+      // Extract nested data from artifactData with type safety
       const artifact_data = doc.artifactData || {};
       
-      // Get user story type from userStorySnapshot
-      let user_story_type = null;
-      const user_story_snapshot = artifact_data.userStorySnapshot || [];
-      if (user_story_snapshot && user_story_snapshot.length > 0) {
-        user_story_type = user_story_snapshot[0].title || '';
+      // Get user story type from userStorySnapshot with type safety
+      let user_story_type = '';
+      if (artifact_data && 
+          typeof artifact_data === 'object' && 
+          'userStorySnapshot' in artifact_data && 
+          Array.isArray(artifact_data.userStorySnapshot) && 
+          artifact_data.userStorySnapshot.length > 0 && 
+          typeof artifact_data.userStorySnapshot[0] === 'object' &&
+          artifact_data.userStorySnapshot[0] !== null) {
+        
+        user_story_type = (artifact_data.userStorySnapshot[0] as any).title || '';
       }
       
-      // Get project name from selectedProjectSnapShot
-      let project_name = null;
-      const selected_project = artifact_data.selectedProjectSnapShot || {};
-      if (selected_project) {
-        project_name = selected_project.name || '';
+      // Get project name from selectedProjectSnapShot with type safety
+      let project_name = '';
+      if (artifact_data && 
+          typeof artifact_data === 'object' && 
+          'selectedProjectSnapShot' in artifact_data && 
+          typeof artifact_data.selectedProjectSnapShot === 'object' && 
+          artifact_data.selectedProjectSnapShot !== null) {
+        
+        project_name = (artifact_data.selectedProjectSnapShot as any).name || '';
       }
       
       // Build the result JSON object
@@ -197,7 +166,6 @@ export async function GET(request: NextRequest) {
       results.push(result_json);
     }
 
-    console.log(`Processing complete: Processed: ${processedDocs}, Results: ${results.length}`);
     return NextResponse.json(results);
 
   } catch (error) {
@@ -209,24 +177,140 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// Optional: Add endpoint to get all artifacts without time filtering
+// Endpoint for paginated data with filtering
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { limit = 100, skip = 0 } = body;
+    const { 
+      limit = 10, 
+      skip = 0, 
+      env = 'dev',
+      timeParams = '',  // Time filter params
+      filters = {} // Additional filters (status, template, search)
+    } = body;
 
-    // Connect to MongoDB
-    const db = await getDatabase();
+    // Parse time parameters if provided
+    let fromTime = null;
+    let toTime = null;
+
+    if (timeParams) {
+      const timeParamsObj = new URLSearchParams(timeParams);
+      const fromTimeParam = timeParamsObj.get('fromTime');
+      const toTimeParam = timeParamsObj.get('toTime');
+
+      if (fromTimeParam) {
+        fromTime = new Date(fromTimeParam);
+        if (isNaN(fromTime.getTime())) {
+          fromTime = null;
+        }
+      }
+
+      if (toTimeParam) {
+        toTime = new Date(toTimeParam);
+        if (isNaN(toTime.getTime())) {
+          toTime = null;
+        }
+      }
+    }
+
+    // Connect to MongoDB with appropriate URI based on env
+    const db = await getDatabase(env === 'prod' ? 'MONGODB_URI_PROD' : 'MONGODB_URI');
     const collection = db.collection('artifacts');
 
-    const results = [];
+    // Build match conditions
+    const matchConditions: any = {
+      created_at: { $exists: true, $nin: [null, ""] }
+    };
 
-    // Query with pagination
-    const cursor = collection.find({}).skip(skip).limit(limit).sort({ created_at: -1 });
+    // Add status filter if provided
+    if (filters.status) {
+      matchConditions.status = filters.status;
+    }
 
-    for await (const doc of cursor) {
+    // Add template filter if provided
+    if (filters.template) {
+      matchConditions.modeName = filters.template;
+    }
+
+    // Add search filter if provided
+    if (filters.search) {
+      const searchRegex = new RegExp(filters.search, 'i');
+      matchConditions.$or = [
+        { artifactTitle: searchRegex },
+        { userEmail: searchRegex },
+        { modeName: searchRegex },
+        // Add other searchable fields as needed
+      ];
+    }
+
+    // Build aggregation pipeline
+    const pipeline: any[] = [
+      // Stage 1: Match documents with basic conditions
+      {
+        $match: matchConditions
+      },
+      // Stage 2: Parse the created_at string and convert to proper date
+      {
+        $addFields: {
+          parsed_date: {
+            $dateFromString: {
+              dateString: {
+                $concat: [
+                  "20", // Add "20" prefix for year
+                  { $substr: [{ $substr: ["$created_at", 6, 2] }, 0, 2] }, // Extract year (YY)
+                  "-",
+                  { $substr: [{ $substr: ["$created_at", 3, 2] }, 0, 2] }, // Extract month (MM)
+                  "-",
+                  { $substr: ["$created_at", 0, 2] }, // Extract day (DD)
+                  "T",
+                  { $substr: [{ $substr: ["$created_at", 9, 8] }, 0, 8] }, // Extract time (HH:MM:SS)
+                  "Z"
+                ]
+              },
+              format: "%Y-%m-%dT%H:%M:%SZ",
+              onError: null,
+              onNull: null
+            }
+          }
+        }
+      }
+    ];
+
+    // Add time filter if provided
+    if (fromTime && toTime) {
+      pipeline.push({
+        $match: {
+          parsed_date: {
+            $ne: null,
+            $gte: fromTime,
+            $lte: toTime
+          }
+        }
+      });
+    }
+
+    // Add facet for getting total count and paginated data in one query
+    pipeline.push({
+      $facet: {
+        total: [{ $count: 'count' }],
+        data: [
+          { $sort: { parsed_date: -1 } }, // Sort by date descending
+          { $skip: skip },
+          { $limit: limit }
+        ]
+      }
+    });
+
+    const [result] = await collection.aggregate(pipeline).toArray();
+    
+    // Process the results
+    const totalCount = result.total.length > 0 ? result.total[0].count : 0;
+    const artifacts = result.data || [];
+
+    // Process each artifact
+    const processedData = artifacts.map((doc: { created_at: string; artifactData: {}; _id: { toString: () => any; }; artifactId: any; artifactTitle: any; artifactTitleIDs: any; userEmail: any; modeName: any; widgetName: any; updated_at: any; }) => {
+      // Parse created_at for display formatting
       const created_at_str = doc.created_at || '';
-      
       let date_str = null;
       let time_str = null;
       
@@ -242,21 +326,35 @@ export async function POST(request: NextRequest) {
         }
       }
       
+      // Extract nested data from artifactData with type safety
       const artifact_data = doc.artifactData || {};
       
-      let user_story_type = null;
-      const user_story_snapshot = artifact_data.userStorySnapshot || [];
-      if (user_story_snapshot && user_story_snapshot.length > 0) {
-        user_story_type = user_story_snapshot[0].title || '';
+      // Get user story type from userStorySnapshot with type safety
+      let user_story_type = '';
+      if (artifact_data && 
+          typeof artifact_data === 'object' && 
+          'userStorySnapshot' in artifact_data && 
+          Array.isArray(artifact_data.userStorySnapshot) && 
+          artifact_data.userStorySnapshot.length > 0 && 
+          typeof artifact_data.userStorySnapshot[0] === 'object' &&
+          artifact_data.userStorySnapshot[0] !== null) {
+        
+        user_story_type = (artifact_data.userStorySnapshot[0] as any).title || '';
       }
       
-      let project_name = null;
-      const selected_project = artifact_data.selectedProjectSnapShot || {};
-      if (selected_project) {
-        project_name = selected_project.name || '';
+      // Get project name from selectedProjectSnapShot with type safety
+      let project_name = '';
+      if (artifact_data && 
+          typeof artifact_data === 'object' && 
+          'selectedProjectSnapShot' in artifact_data && 
+          typeof artifact_data.selectedProjectSnapShot === 'object' && 
+          artifact_data.selectedProjectSnapShot !== null) {
+        
+        project_name = (artifact_data.selectedProjectSnapShot as any).name || '';
       }
       
-      const result_json = {
+      // Build the result JSON object
+      return {
         artifact_id: doc.artifactId || '',
         artifact_title: doc.artifactTitle || '',
         artifact_title_ids: doc.artifactTitleIDs || [],
@@ -267,22 +365,17 @@ export async function POST(request: NextRequest) {
         widget_name: doc.widgetName || '',
         project_name: project_name,
         user_story_type: user_story_type,
-        status: "success",
+        status: "success", // Set default status if needed
         created_at: doc.created_at || '',
         updated_at: doc.updated_at || '',
       };
-      
-      results.push(result_json);
-    }
-
-    // Get total count for pagination
-    const totalCount = await collection.countDocuments({});
+    });
 
     return NextResponse.json({
       total: totalCount,
       skip: skip,
       limit: limit,
-      data: results
+      data: processedData
     });
 
   } catch (error) {

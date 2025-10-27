@@ -1,15 +1,29 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Search, Filter, Download, RefreshCw, Eye } from 'lucide-react';
-import { UserStoryData, TimeWindow, PaginationState } from '../types';
+import { Search, Filter, Download, RefreshCw, Eye, Link2, ExternalLink } from 'lucide-react';
+import { UserStoryData, TimeWindow, PaginationState, Environment, getArtifactUrl } from '../types';
 
 interface DataTableProps {
   initialData: UserStoryData[];
   timeWindow: string;
+  environment: Environment;
+  isLoading: boolean;
+  onRefresh: () => void;
+  customDateRange?: {
+    from: Date | undefined;
+    to: Date | undefined;
+  };
 }
 
-const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
+const DataTable: React.FC<DataTableProps> = ({ 
+  initialData, 
+  timeWindow, 
+  environment, 
+  isLoading, 
+  onRefresh,
+  customDateRange 
+}) => {
   // State management
-  const [data, setData] = useState<UserStoryData[]>(initialData);
+  const [data, setData] = useState<UserStoryData[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -30,6 +44,17 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
     template: null as string | null,
     search: ''
   });
+  const [totalResults, setTotalResults] = useState(0);
+
+  // Set data when initialData changes
+  useEffect(() => {
+    setData(initialData);
+  }, [initialData]);
+
+  // Update loading state from props
+  useEffect(() => {
+    setLoading(isLoading);
+  }, [isLoading]);
 
   // Fetch data with pagination
   const fetchTableData = useCallback(async (page = pagination.page, pageSize = pagination.pageSize) => {
@@ -37,6 +62,51 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
     setError(null);
     
     try {
+      // Build query parameters for time filter
+      let timeParams = '';
+      if (timeWindow === 'Custom Range' && customDateRange?.from && customDateRange?.to) {
+        const fromTime = customDateRange.from;
+        const toTime = new Date(customDateRange.to.getTime());
+        toTime.setHours(23, 59, 59, 999); // End of day
+        
+        timeParams = `&fromTime=${fromTime.toISOString()}&toTime=${toTime.toISOString()}`;
+      } else {
+        const now = new Date();
+        let fromTime: Date | null = null;
+        
+        if (timeWindow === 'Last 1 Hour') {
+          fromTime = new Date(now);
+          fromTime.setHours(now.getHours() - 1);
+        } else if (timeWindow === 'Last 6 Hours') {
+          fromTime = new Date(now);
+          fromTime.setHours(now.getHours() - 6);
+        } else if (timeWindow === 'Last 12 Hours') {
+          fromTime = new Date(now);
+          fromTime.setHours(now.getHours() - 12);
+        } else if (timeWindow === 'Last 24 Hours') {
+          fromTime = new Date(now);
+          fromTime.setHours(now.getHours() - 24);
+        } else if (timeWindow === 'Last 3 Days') {
+          fromTime = new Date(now);
+          fromTime.setDate(now.getDate() - 3);
+        } else if (timeWindow === 'Last 7 Days') {
+          fromTime = new Date(now);
+          fromTime.setDate(now.getDate() - 7);
+        } else if (timeWindow === 'Last 14 Days') {
+          fromTime = new Date(now);
+          fromTime.setDate(now.getDate() - 14);
+        } else if (timeWindow === 'Last 30 Days') {
+          fromTime = new Date(now);
+          fromTime.setDate(now.getDate() - 30);
+        }
+        
+        if (fromTime) {
+          timeParams = `&fromTime=${fromTime.toISOString()}&toTime=${now.toISOString()}`;
+        } else {
+          timeParams = `&toTime=${now.toISOString()}`;
+        }
+      }
+      
       const response = await fetch('/api/artifacts', {
         method: 'POST',
         headers: {
@@ -44,7 +114,14 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
         },
         body: JSON.stringify({
           limit: pageSize,
-          skip: (page - 1) * pageSize
+          skip: (page - 1) * pageSize,
+          env: environment,
+          timeParams: timeParams,
+          filters: {
+            status: appliedFilters.status,
+            template: appliedFilters.template,
+            search: appliedFilters.search
+          }
         })
       });
       
@@ -55,6 +132,7 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
       const result = await response.json();
       
       setData(result.data || []);
+      setTotalResults(result.total || 0);
       setPagination(prev => ({
         ...prev,
         total: result.total || 0
@@ -65,12 +143,12 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
     } finally {
       setLoading(false);
     }
-  }, [pagination.page, pagination.pageSize]);
+  }, [pagination.page, pagination.pageSize, timeWindow, environment, appliedFilters, customDateRange]);
 
-  // Load data on component mount
+  // Load data on component mount and when filters change
   useEffect(() => {
     fetchTableData();
-  }, []);
+  }, [fetchTableData]);
 
   // Handle refresh click
   const handleRefresh = () => {
@@ -80,7 +158,7 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
       template: templateFilter,
       search: searchTerm
     });
-    fetchTableData();
+    onRefresh();
   };
 
   // Handle apply filters
@@ -91,61 +169,13 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
       search: searchTerm
     });
     setIsFilterOpen(false);
+    // Reset to first page when applying filters
+    setPagination(prev => ({
+      ...prev,
+      page: 1
+    }));
+    fetchTableData(1, pagination.pageSize);
   };
-
-  // Apply filters and sorting to data
-  const filteredAndSortedData = React.useMemo(() => {
-    let result = [...data];
-    
-    // Apply status filter
-    if (appliedFilters.status) {
-      result = result.filter(item => item.status === appliedFilters.status);
-    }
-    
-    // Apply template filter
-    if (appliedFilters.template) {
-      result = result.filter(item => item.mode_name === appliedFilters.template);
-    }
-    
-    // Apply search filter
-    if (appliedFilters.search) {
-      const searchLower = appliedFilters.search.toLowerCase();
-      result = result.filter(item => {
-        return (
-          (item.artifact_title?.toLowerCase().includes(searchLower) || false) ||
-          (item.user_email?.toLowerCase().includes(searchLower) || false) ||
-          (item.project_name?.toLowerCase().includes(searchLower) || false) ||
-          (item.mode_name?.toLowerCase().includes(searchLower) || false)
-        );
-      });
-    }
-    
-    // Apply sorting
-    result.sort((a, b) => {
-      const aValue = a[sortField] || '';
-      const bValue = b[sortField] || '';
-      
-      if (typeof aValue === 'string' && typeof bValue === 'string') {
-        return sortDirection === 'asc' 
-          ? aValue.localeCompare(bValue) 
-          : bValue.localeCompare(aValue);
-      }
-      
-      return 0;
-    });
-    
-    return result;
-  }, [data, appliedFilters, sortField, sortDirection]);
-
-  // Calculate pagination
-  const totalPages = Math.ceil(filteredAndSortedData.length / pagination.pageSize);
-  const paginatedData = filteredAndSortedData.slice(
-    (pagination.page - 1) * pagination.pageSize,
-    pagination.page * pagination.pageSize
-  );
-
-  // Extract unique templates for filter dropdown
-  const uniqueTemplates = Array.from(new Set(data.map(item => item.mode_name).filter((t): t is string => Boolean(t))));
 
   // Handle search submit
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -154,6 +184,37 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
       ...prev,
       search: searchTerm
     }));
+    // Reset to first page when searching
+    setPagination(prev => ({
+      ...prev,
+      page: 1
+    }));
+    fetchTableData(1, pagination.pageSize);
+  };
+
+  // Extract unique templates for filter dropdown
+  const uniqueTemplates = Array.from(new Set(data.map(item => item.mode_name).filter(Boolean)));
+
+  // Calculate pagination
+  const totalPages = Math.ceil(totalResults / pagination.pageSize);
+
+  // Handle page change
+  const handlePageChange = (newPage: number) => {
+    setPagination(prev => ({
+      ...prev,
+      page: newPage
+    }));
+    fetchTableData(newPage, pagination.pageSize);
+  };
+
+  // Handle page size change
+  const handlePageSizeChange = (newPageSize: number) => {
+    setPagination({
+      page: 1,
+      pageSize: newPageSize,
+      total: totalResults
+    });
+    fetchTableData(1, newPageSize);
   };
 
   // Status badge renderer
@@ -196,12 +257,82 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
 
   // Handle sort
   const handleSort = (field: keyof UserStoryData) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
+    const newDirection = sortField === field && sortDirection === 'asc' ? 'desc' : 'asc';
+    setSortField(field);
+    setSortDirection(newDirection);
+    
+    // Update data order
+    const sortedData = [...data].sort((a, b) => {
+      const aValue = a[field] || '';
+      const bValue = b[field] || '';
+      
+      if (typeof aValue === 'string' && typeof bValue === 'string') {
+        return newDirection === 'asc' 
+          ? aValue.localeCompare(bValue) 
+          : bValue.localeCompare(aValue);
+      }
+      
+      return 0;
+    });
+    
+    setData(sortedData);
+  };
+
+  // Export to CSV
+  const exportToCSV = () => {
+    if (data.length === 0) return;
+    
+    // Define headers
+    const headers = [
+      'Artifact ID',
+      'Artifact Title',
+      'Date',
+      'Time',
+      'User',
+      'Template',
+      'Project',
+      'Status',
+      'URL'
+    ];
+    
+    // Create CSV content
+    let csvContent = headers.join(',') + '\n';
+    
+    data.forEach(item => {
+      const artifactUrl = item.artifact_id 
+        ? getArtifactUrl(item.artifact_id, environment, item.mode_name || '')
+        : '';
+      
+      const row = [
+        item.artifact_id || '',
+        `"${(item.artifact_title || '').replace(/"/g, '""')}"`,
+        item.date || '',
+        item.time || '',
+        `"${(item.user_email || '').replace(/"/g, '""')}"`,
+        `"${(item.mode_name || '').replace(/"/g, '""')}"`,
+        `"${(item.project_name || '').replace(/"/g, '""')}"`,
+        item.status || '',
+        artifactUrl
+      ];
+      
+      csvContent += row.join(',') + '\n';
+    });
+    
+    // Create download link
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `artifacts_${environment}_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  };
+
+  // Get artifact URL
+  const getArtifactLink = (item: UserStoryData): string => {
+    if (!item.artifact_id) return '#';
+    return getArtifactUrl(item.artifact_id, environment, item.mode_name || '');
   };
 
   return (
@@ -307,6 +438,8 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
           
           <button
             className="bg-slate-800 text-white px-4 py-2 rounded-lg border border-slate-700 text-sm font-medium flex items-center"
+            onClick={exportToCSV}
+            disabled={data.length === 0}
           >
             <Download className="w-4 h-4 mr-2" />
             Export
@@ -325,6 +458,8 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
                 onClick={() => {
                   setStatusFilter(null);
                   setAppliedFilters(prev => ({...prev, status: null}));
+                  setPagination(prev => ({ ...prev, page: 1 }));
+                  fetchTableData(1, pagination.pageSize);
                 }}
                 className="ml-1 text-slate-400 hover:text-white"
               >
@@ -339,6 +474,8 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
                 onClick={() => {
                   setTemplateFilter(null);
                   setAppliedFilters(prev => ({...prev, template: null}));
+                  setPagination(prev => ({ ...prev, page: 1 }));
+                  fetchTableData(1, pagination.pageSize);
                 }}
                 className="ml-1 text-slate-400 hover:text-white"
               >
@@ -353,6 +490,8 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
                 onClick={() => {
                   setSearchTerm('');
                   setAppliedFilters(prev => ({...prev, search: ''}));
+                  setPagination(prev => ({ ...prev, page: 1 }));
+                  fetchTableData(1, pagination.pageSize);
                 }}
                 className="ml-1 text-slate-400 hover:text-white"
               >
@@ -366,6 +505,8 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
               setTemplateFilter(null);
               setSearchTerm('');
               setAppliedFilters({status: null, template: null, search: ''});
+              setPagination(prev => ({ ...prev, page: 1 }));
+              fetchTableData(1, pagination.pageSize);
             }}
             className="text-blue-400 hover:underline"
           >
@@ -449,7 +590,7 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
                   </tr>
                 </thead>
                 <tbody>
-                  {paginatedData.length === 0 ? (
+                  {data.length === 0 ? (
                     <tr>
                       <td colSpan={7} className="px-6 py-12 text-center text-slate-400">
                         {error ? (
@@ -473,6 +614,7 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
                                   setTemplateFilter(null);
                                   setSearchTerm('');
                                   setAppliedFilters({status: null, template: null, search: ''});
+                                  fetchTableData(1, pagination.pageSize);
                                 }}
                               >
                                 Clear filters
@@ -483,7 +625,7 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
                       </td>
                     </tr>
                   ) : (
-                    paginatedData.map((item, idx) => (
+                    data.map((item, idx) => (
                       <tr 
                         key={item.artifact_id || idx} 
                         className="border-b border-slate-800 hover:bg-slate-800/30"
@@ -514,16 +656,28 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
                           {getStatusBadge(item.status)}
                         </td>
                         <td className="px-6 py-4 text-center">
-                          <button 
-                            onClick={() => {
-                              setDetailItem(item);
-                              setIsDetailOpen(true);
-                            }}
-                            className="inline-flex items-center text-blue-400 hover:text-blue-300"
-                          >
-                            <Eye className="w-4 h-4 mr-1" />
-                            View
-                          </button>
+                          <div className="flex items-center justify-center space-x-3">
+                            {item.artifact_id ? (
+                              <a
+                                href={getArtifactLink(item)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center text-blue-400 hover:text-blue-300"
+                              >
+                                <ExternalLink className="w-4 h-4" />
+                              </a>
+                            ) : null}
+                            <button 
+                              onClick={() => {
+                                setDetailItem(item);
+                                setIsDetailOpen(true);
+                              }}
+                              className="inline-flex items-center text-blue-400 hover:text-blue-300"
+                              title="View Details"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -536,12 +690,12 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
             {totalPages > 1 && (
               <div className="px-6 py-4 flex justify-between items-center border-t border-slate-800">
                 <div className="text-sm text-slate-400">
-                  Showing {(pagination.page - 1) * pagination.pageSize + 1} to {Math.min(pagination.page * pagination.pageSize, filteredAndSortedData.length)} of {filteredAndSortedData.length} results
+                  Showing {(pagination.page - 1) * pagination.pageSize + 1} to {Math.min(pagination.page * pagination.pageSize, totalResults)} of {totalResults} results
                 </div>
                 
                 <div className="flex space-x-1">
                   <button
-                    onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
+                    onClick={() => handlePageChange(Math.max(1, pagination.page - 1))}
                     disabled={pagination.page === 1}
                     className={`px-2 py-1 rounded-md ${pagination.page === 1 ? 'text-slate-600 cursor-not-allowed' : 'text-white bg-slate-700 hover:bg-slate-600'}`}
                   >
@@ -564,7 +718,7 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
                     return (
                       <button
                         key={pageNum}
-                        onClick={() => setPagination(prev => ({ ...prev, page: pageNum }))}
+                        onClick={() => handlePageChange(pageNum)}
                         className={`px-3 py-1 rounded-md ${pagination.page === pageNum ? 'bg-blue-600 text-white' : 'bg-slate-700 hover:bg-slate-600 text-white'}`}
                       >
                         {pageNum}
@@ -573,12 +727,26 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
                   })}
                   
                   <button
-                    onClick={() => setPagination(prev => ({ ...prev, page: Math.min(totalPages, prev.page + 1) }))}
+                    onClick={() => handlePageChange(Math.min(totalPages, pagination.page + 1))}
                     disabled={pagination.page === totalPages}
                     className={`px-2 py-1 rounded-md ${pagination.page === totalPages ? 'text-slate-600 cursor-not-allowed' : 'text-white bg-slate-700 hover:bg-slate-600'}`}
                   >
                     Next
                   </button>
+                </div>
+                
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-slate-400">Rows per page:</span>
+                  <select 
+                    value={pagination.pageSize.toString()} 
+                    onChange={(e) => handlePageSizeChange(parseInt(e.target.value))}
+                    className="bg-slate-800 border border-slate-700 text-white text-sm rounded-lg p-1"
+                  >
+                    <option value="10">10</option>
+                    <option value="25">25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                  </select>
                 </div>
               </div>
             )}
@@ -651,6 +819,21 @@ const DataTable: React.FC<DataTableProps> = ({ initialData, timeWindow }) => {
                 )}
               </div>
             </div>
+            
+            {detailItem.artifact_id && (
+              <div className="mt-6">
+                <p className="text-sm text-slate-400 mb-2">Artifact URL</p>
+                <a
+                  href={getArtifactLink(detailItem)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center text-blue-400 hover:text-blue-300"
+                >
+                  <Link2 className="w-4 h-4 mr-2" />
+                  <span className="truncate">{getArtifactLink(detailItem)}</span>
+                </a>
+              </div>
+            )}
             
             <div className="mt-6 pt-6 border-t border-slate-700 flex justify-end">
               <button

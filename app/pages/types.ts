@@ -19,6 +19,7 @@ export interface TimeWindow {
   label: string;
   hours?: number;
   days?: number;
+  custom?: boolean;
 }
 
 export interface PaginationState {
@@ -26,3 +27,11 @@ export interface PaginationState {
   pageSize: number;
   total: number;
 }
+
+export type Environment = 'dev' | 'prod';
+
+export const getArtifactUrl = (artifactId: string, environment: Environment, modeName: string): string => {
+  const baseUrl = environment === 'dev' ? 'https://dev.appmod.ai' : 'https://appmod.ai';
+  const encodedModeName = encodeURIComponent('MMVF User Story Generation Mode');
+  return `${baseUrl}/artifact/${artifactId}/mode/${encodedModeName}`;
+};

@@ -6,3 +6,5 @@ export { default as TopTemplates } from './TopTemplates';
 export { default as TopUsers } from './TopUsers';
 export { default as ActivityTimeline } from './ActivityTimeline';
 export { default as DataTable } from './DataTable';
+export { default as UsageByTime } from './UsageByTime';
+export { default as ProjectActivity } from './ProjectActivity';

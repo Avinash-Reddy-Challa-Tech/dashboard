@@ -1,7 +1,7 @@
 "use client";
 
-import React from 'react';
-import { Clock, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Clock, RefreshCw, CalendarIcon, DownloadIcon } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import {
   Tabs,
@@ -16,6 +16,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { format } from "date-fns";
 
 // Import components
 import StatsOverview from './components/StatsOverview';
@@ -23,20 +30,30 @@ import StatusBreakdown from './components/StatusBreakdown';
 import TopProjects from './components/TopProjects';
 import TopTemplates from './components/TopTemplates';
 import TopUsers from './components/TopUsers';
-import ActivityTimeline from './components/ActivityTimeline';
+import ProjectActivity from './components/ProjectActivity';
 import DataTable from './components/DataTable';
+import UsageByTime from './components/UsageByTime';
 
 // Types
-import { TimeWindow, UserStoryData } from './types';
+import { TimeWindow, UserStoryData, Environment } from './types';
 
 export default function Dashboard() {
   // State management
-  const [activeTab, setActiveTab] = React.useState("overview");
-  const [timeWindow, setTimeWindow] = React.useState('Last 24 Hours');
-  const [data, setData] = React.useState<UserStoryData[]>([]);
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [lastFetched, setLastFetched] = React.useState<Date | null>(null);
+  const [activeTab, setActiveTab] = useState("overview");
+  const [timeWindow, setTimeWindow] = useState('Last 24 Hours');
+  const [data, setData] = useState<UserStoryData[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [lastFetched, setLastFetched] = useState<Date | null>(null);
+  const [environment, setEnvironment] = useState<Environment>('dev');
+  const [customDateRange, setCustomDateRange] = useState<{
+    from: Date | undefined;
+    to: Date | undefined;
+  }>({
+    from: undefined,
+    to: undefined
+  });
+  const [showCustomDateRange, setShowCustomDateRange] = useState(false);
 
   // Time windows options
   const timeWindows: TimeWindow[] = [
@@ -48,11 +65,21 @@ export default function Dashboard() {
     { label: 'Last 7 Days', days: 7 },
     { label: 'Last 14 Days', days: 14 },
     { label: 'Last 30 Days', days: 30 },
+    { label: 'Custom Range', custom: true },
   ];
 
   // Time filter function
   const getTimeFilter = (selectedWindow: string) => {
     const now = new Date();
+    
+    // Handle custom date range
+    if (selectedWindow === 'Custom Range' && customDateRange.from && customDateRange.to) {
+      return {
+        fromTime: customDateRange.from,
+        toTime: new Date(customDateRange.to.setHours(23, 59, 59, 999)) // End of the selected day
+      };
+    }
+    
     const selected = timeWindows.find(w => w.label === selectedWindow);
     
     if (!selected) {
@@ -69,6 +96,24 @@ export default function Dashboard() {
     return { fromTime, toTime: now };
   };
 
+  // Handle time window change
+  const handleTimeWindowChange = (value: string) => {
+    setTimeWindow(value);
+    if (value === 'Custom Range') {
+      setShowCustomDateRange(true);
+    } else {
+      setShowCustomDateRange(false);
+    }
+  };
+
+  // Apply custom date range
+  const applyCustomDateRange = () => {
+    if (customDateRange.from && customDateRange.to) {
+      setShowCustomDateRange(false);
+      fetchAnalyticsData();
+    }
+  };
+
   // Fetch data with time filters for overview
   const fetchAnalyticsData = async () => {
     setLoading(true);
@@ -83,6 +128,7 @@ export default function Dashboard() {
         params.append('fromTime', fromTime.toISOString());
       }
       params.append('toTime', toTime.toISOString());
+      params.append('env', environment);
       
       const apiUrl = `/api/artifacts?${params.toString()}`;
       console.log('Fetching data from:', apiUrl);
@@ -105,10 +151,70 @@ export default function Dashboard() {
     }
   };
 
+  // Handle environment change
+  const handleEnvironmentChange = (value: Environment) => {
+    setEnvironment(value);
+  };
+
+  // Export data to CSV
+  const exportToCSV = () => {
+    if (data.length === 0) return;
+
+    // Define headers and fields to include
+    const headers = [
+      'Artifact ID',
+      'Artifact Title',
+      'Date',
+      'Time',
+      'User Email',
+      'Template',
+      'Project',
+      'Status',
+      'Created At'
+    ];
+
+    const csvRows = [];
+
+    // Add the headers
+    csvRows.push(headers.join(','));
+
+    // Add the data
+    for (const item of data) {
+      const values = [
+        item.artifact_id || '',
+        `"${(item.artifact_title || '').replace(/"/g, '""')}"`, // Escape quotes in title
+        item.date || '',
+        item.time || '',
+        `"${(item.user_email || '').replace(/"/g, '""')}"`,
+        `"${(item.mode_name || '').replace(/"/g, '""')}"`,
+        `"${(item.project_name || '').replace(/"/g, '""')}"`,
+        item.status || '',
+        item.created_at || ''
+      ];
+      csvRows.push(values.join(','));
+    }
+
+    // Create CSV content
+    const csvContent = csvRows.join('\n');
+
+    // Create a blob and download link
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `artifacts_export_${environment}_${format(new Date(), 'yyyy-MM-dd')}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // Load data on component mount and when filters change
-  React.useEffect(() => {
-    fetchAnalyticsData();
-  }, [timeWindow]);
+  useEffect(() => {
+    if (timeWindow !== 'Custom Range' || (customDateRange.from && customDateRange.to)) {
+      fetchAnalyticsData();
+    }
+  }, [timeWindow, environment, customDateRange.from, customDateRange.to]);
 
   // Handle tab changes
   const handleTabChange = (value: string) => {
@@ -120,15 +226,31 @@ export default function Dashboard() {
       <div className="container mx-auto p-4 md:p-6 space-y-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white">Analytics Dashboard</h1>
+            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white">UserStory Analytics Dashboard</h1>
             <p className="text-slate-400">
               Monitor user story generation and track usage patterns
             </p>
           </div>
           
-          <div className="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
-            <Select value={timeWindow} onValueChange={setTimeWindow}>
-              <SelectTrigger className="w-full sm:w-[180px] bg-slate-800 border-slate-700 text-white">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Environment Selector */}
+            <Select value={environment} onValueChange={handleEnvironmentChange}>
+              <SelectTrigger className="w-28 bg-slate-800 border-slate-700 text-white">
+                <SelectValue placeholder="Environment" />
+              </SelectTrigger>
+              <SelectContent className="bg-slate-800 border-slate-700 text-white">
+                <SelectItem value="dev" className="focus:bg-slate-700 focus:text-white">
+                  Dev
+                </SelectItem>
+                <SelectItem value="prod" className="focus:bg-slate-700 focus:text-white">
+                  Prod
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            
+            {/* Time Window Selector */}
+            <Select value={timeWindow} onValueChange={handleTimeWindowChange}>
+              <SelectTrigger className="w-40 bg-slate-800 border-slate-700 text-white">
                 <SelectValue placeholder="Select time window" />
               </SelectTrigger>
               <SelectContent className="bg-slate-800 border-slate-700 text-white">
@@ -140,12 +262,75 @@ export default function Dashboard() {
               </SelectContent>
             </Select>
             
+            {/* Custom Date Range Popover */}
+            {showCustomDateRange && (
+              <Popover open={showCustomDateRange} onOpenChange={setShowCustomDateRange}>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="bg-slate-800 border-slate-700 text-white">
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {customDateRange.from ? (
+                      customDateRange.to ? (
+                        <>
+                          {format(customDateRange.from, "MMM d, yyyy")} - {format(customDateRange.to, "MMM d, yyyy")}
+                        </>
+                      ) : (
+                        format(customDateRange.from, "MMM d, yyyy")
+                      )
+                    ) : (
+                      "Pick date range"
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0 bg-slate-800 border-slate-700 text-white" align="start">
+                  <Calendar
+                    initialFocus
+                    mode="range"
+                    defaultMonth={customDateRange.from}
+                    selected={{
+                      from: customDateRange.from,
+                      to: customDateRange.to,
+                    }}
+                    onSelect={(range) => setCustomDateRange({
+                      from: range?.from,
+                      to: range?.to
+                    })}
+                    numberOfMonths={2}
+                  />
+                  <div className="flex justify-end gap-2 p-3 border-t border-slate-700">
+                    <Button 
+                      variant="ghost" 
+                      onClick={() => setShowCustomDateRange(false)}
+                      className="text-white hover:bg-slate-700"
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      onClick={applyCustomDateRange} 
+                      disabled={!customDateRange.from || !customDateRange.to}
+                      className="bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      Apply
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
+            
             <Button 
               onClick={fetchAnalyticsData}
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               <RefreshCw className="mr-2 h-4 w-4" />
-              Refresh Data
+              Refresh
+            </Button>
+            
+            <Button 
+              onClick={exportToCSV}
+              className="bg-green-600 hover:bg-green-700 text-white"
+              disabled={data.length === 0}
+            >
+              <DownloadIcon className="mr-2 h-4 w-4" />
+              Export
             </Button>
           </div>
         </div>
@@ -154,6 +339,11 @@ export default function Dashboard() {
           <div className="flex items-center text-sm text-slate-400">
             <Clock className="mr-1 h-4 w-4" />
             Last updated: {lastFetched.toLocaleString()}
+            {environment === 'dev' ? (
+              <span className="ml-2 px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 text-xs font-medium">Dev</span>
+            ) : (
+              <span className="ml-2 px-2 py-0.5 rounded bg-green-500/20 text-green-400 text-xs font-medium">Prod</span>
+            )}
           </div>
         )}
         
@@ -195,10 +385,10 @@ export default function Dashboard() {
                 {/* Stats Overview */}
                 <StatsOverview data={data} />
                 
-                {/* Status Breakdown */}
+                {/* Status Breakdown and Usage by Time */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                   <StatusBreakdown data={data} />
-                  <TopProjects data={data} />
+                  <UsageByTime data={data} />
                 </div>
                 
                 {/* Templates and Users */}
@@ -207,8 +397,8 @@ export default function Dashboard() {
                   <TopUsers data={data} />
                 </div>
                 
-                {/* Activity Timeline */}
-                <ActivityTimeline data={data} />
+                {/* Project Activity */}
+                <ProjectActivity data={data} />
                 
                 {/* Show empty state if no data */}
                 {data.length === 0 && !loading && (
@@ -224,6 +414,10 @@ export default function Dashboard() {
             <DataTable 
               initialData={data} 
               timeWindow={timeWindow}
+              environment={environment}
+              isLoading={loading}
+              onRefresh={fetchAnalyticsData}
+              customDateRange={customDateRange}
             />
           </TabsContent>
         </Tabs>
