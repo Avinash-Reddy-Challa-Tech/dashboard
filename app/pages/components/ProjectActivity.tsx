@@ -17,22 +17,22 @@ const ProjectActivity: React.FC<ProjectActivityProps> = ({ data }) => {
     
     // Process each data item
     data.forEach(item => {
-      if (item.project_name) {
-        // Get or initialize project data
-        const project = projectMap.get(item.project_name) || {
-          count: 0,
-          users: new Set<string>(),
-          templates: new Set<string>()
-        };
-        
-        // Update metrics
-        project.count += 1;
-        if (item.user_email) project.users.add(item.user_email);
-        if (item.mode_name) project.templates.add(item.mode_name);
-        
-        // Store updated data
-        projectMap.set(item.project_name, project);
-      }
+      const projectName = item.project_name || 'Unnamed Project';
+      
+      // Get or initialize project data
+      const project = projectMap.get(projectName) || {
+        count: 0,
+        users: new Set<string>(),
+        templates: new Set<string>()
+      };
+      
+      // Update metrics
+      project.count += 1;
+      if (item.user_email) project.users.add(item.user_email);
+      if (item.mode_name) project.templates.add(item.mode_name);
+      
+      // Store updated data
+      projectMap.set(projectName, project);
     });
     
     // Convert to array and sort by count
@@ -48,6 +48,9 @@ const ProjectActivity: React.FC<ProjectActivityProps> = ({ data }) => {
 
   // Find maximum count for visualization
   const maxCount = Math.max(...projectData.map(p => p.count), 1);
+  
+  // Check if we have any project data
+  const hasData = projectData.length > 0 && projectData.some(p => p.count > 0);
 
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-6 border border-slate-700">
@@ -59,9 +62,9 @@ const ProjectActivity: React.FC<ProjectActivityProps> = ({ data }) => {
         <FolderKanban className="w-5 h-5 text-slate-400" />
       </div>
       
-      {projectData.length === 0 ? (
+      {!hasData ? (
         <div className="py-12 text-center">
-          <p className="text-slate-500">No project data available</p>
+          <p className="text-slate-500">No project activity available for the selected time period</p>
         </div>
       ) : (
         <div className="space-y-5">
@@ -73,12 +76,12 @@ const ProjectActivity: React.FC<ProjectActivityProps> = ({ data }) => {
                     {project.name}
                   </p>
                   <div className="flex items-center text-xs text-slate-400 space-x-3">
-                    <span>{project.count} stories</span>
+                    <span>{project.count} {project.count === 1 ? 'story' : 'stories'}</span>
                     <div className="flex items-center space-x-1">
                       <Users className="w-3 h-3" />
-                      <span>{project.users} users</span>
+                      <span>{project.users} {project.users === 1 ? 'user' : 'users'}</span>
                     </div>
-                    <span>{project.templates} templates</span>
+                    <span>{project.templates} {project.templates === 1 ? 'template' : 'templates'}</span>
                   </div>
                 </div>
                 <div className="text-right text-sm text-blue-400 font-medium">

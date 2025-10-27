@@ -16,12 +16,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Calendar } from "@/components/ui/calendar";
 import { format } from "date-fns";
 
 // Import components
@@ -30,9 +24,10 @@ import StatusBreakdown from './components/StatusBreakdown';
 import TopProjects from './components/TopProjects';
 import TopTemplates from './components/TopTemplates';
 import TopUsers from './components/TopUsers';
-import ProjectActivity from './components/ProjectActivity';
 import DataTable from './components/DataTable';
-import UsageByTime from './components/UsageByTime';
+import DayActivity from './components/Dayactivity';
+import HourActivity from './components/HourActivity';
+import CustomDateRangePicker from './components/CustomRangePicker';
 
 // Types
 import { TimeWindow, UserStoryData, Environment } from './types';
@@ -53,7 +48,7 @@ export default function Dashboard() {
     from: undefined,
     to: undefined
   });
-  const [showCustomDateRange, setShowCustomDateRange] = useState(false);
+  const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
 
   // Time windows options
   const timeWindows: TimeWindow[] = [
@@ -74,9 +69,13 @@ export default function Dashboard() {
     
     // Handle custom date range
     if (selectedWindow === 'Custom Range' && customDateRange.from && customDateRange.to) {
+      // Create a copy of the date to avoid modifying the original
+      const toTime = new Date(customDateRange.to);
+      toTime.setHours(23, 59, 59, 999); // End of the selected day
+      
       return {
         fromTime: customDateRange.from,
-        toTime: new Date(customDateRange.to.setHours(23, 59, 59, 999)) // End of the selected day
+        toTime: toTime
       };
     }
     
@@ -100,33 +99,49 @@ export default function Dashboard() {
   const handleTimeWindowChange = (value: string) => {
     setTimeWindow(value);
     if (value === 'Custom Range') {
-      setShowCustomDateRange(true);
+      setShowCustomDatePicker(true);
     } else {
-      setShowCustomDateRange(false);
+      setShowCustomDatePicker(false);
+      // If changing from custom range to a preset, fetch data immediately
+      if (timeWindow === 'Custom Range') {
+        fetchAnalyticsData(value);
+      }
     }
   };
 
-  // Apply custom date range
-  const applyCustomDateRange = () => {
-    if (customDateRange.from && customDateRange.to) {
-      setShowCustomDateRange(false);
-      fetchAnalyticsData();
+  // Handle custom date range change
+  const handleCustomDateRangeChange = (range: { from: Date | undefined; to: Date | undefined }) => {
+    setCustomDateRange(range);
+    
+    // If both dates are selected, fetch data
+    if (range.from && range.to) {
+      fetchAnalyticsData('Custom Range', range);
     }
   };
 
   // Fetch data with time filters for overview
-  const fetchAnalyticsData = async () => {
+  const fetchAnalyticsData = async (
+    windowType = timeWindow, 
+    dateRange = customDateRange
+  ) => {
     setLoading(true);
     setError(null);
     
     try {
-      const { fromTime, toTime } = getTimeFilter(timeWindow);
+      const { fromTime, toTime } = windowType === 'Custom Range' 
+        ? { 
+            fromTime: dateRange.from, 
+            toTime: dateRange.to ? new Date(new Date(dateRange.to).setHours(23, 59, 59, 999)) : null 
+          } 
+        : getTimeFilter(windowType);
+      
+      if (!fromTime || !toTime) {
+        throw new Error('Invalid time range');
+      }
       
       // Build query parameters
       const params = new URLSearchParams();
-      if (fromTime) {
-        params.append('fromTime', fromTime.toISOString());
-      }
+      params.append('fromTime', fromTime.toISOString());
       params.append('toTime', toTime.toISOString());
       params.append('env', environment);
       
@@ -214,7 +229,7 @@ export default function Dashboard() {
     if (timeWindow !== 'Custom Range' || (customDateRange.from && customDateRange.to)) {
       fetchAnalyticsData();
     }
-  }, [timeWindow, environment, customDateRange.from, customDateRange.to]);
+  }, [environment]); // Only automatically refresh on environment change
 
   // Handle tab changes
   const handleTabChange = (value: string) => {
@@ -262,62 +277,17 @@ export default function Dashboard() {
               </SelectContent>
             </Select>
             
-            {/* Custom Date Range Popover */}
-            {showCustomDateRange && (
-              <Popover open={showCustomDateRange} onOpenChange={setShowCustomDateRange}>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="bg-slate-800 border-slate-700 text-white">
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {customDateRange.from ? (
-                      customDateRange.to ? (
-                        <>
-                          {format(customDateRange.from, "MMM d, yyyy")} - {format(customDateRange.to, "MMM d, yyyy")}
-                        </>
-                      ) : (
-                        format(customDateRange.from, "MMM d, yyyy")
-                      )
-                    ) : (
-                      "Pick date range"
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0 bg-slate-800 border-slate-700 text-white" align="start">
-                  <Calendar
-                    initialFocus
-                    mode="range"
-                    defaultMonth={customDateRange.from}
-                    selected={{
-                      from: customDateRange.from,
-                      to: customDateRange.to,
-                    }}
-                    onSelect={(range) => setCustomDateRange({
-                      from: range?.from,
-                      to: range?.to
-                    })}
-                    numberOfMonths={2}
-                  />
-                  <div className="flex justify-end gap-2 p-3 border-t border-slate-700">
-                    <Button 
-                      variant="ghost" 
-                      onClick={() => setShowCustomDateRange(false)}
-                      className="text-white hover:bg-slate-700"
-                    >
-                      Cancel
-                    </Button>
-                    <Button 
-                      onClick={applyCustomDateRange} 
-                      disabled={!customDateRange.from || !customDateRange.to}
-                      className="bg-blue-600 hover:bg-blue-700 text-white"
-                    >
-                      Apply
-                    </Button>
-                  </div>
-                </PopoverContent>
-              </Popover>
+            {/* Custom Date Range Picker */}
+            {timeWindow === 'Custom Range' && (
+              <CustomDateRangePicker 
+                onDateRangeChange={handleCustomDateRangeChange}
+                open={showCustomDatePicker}
+                onOpenChange={setShowCustomDatePicker}
+              />
             )}
             
             <Button 
-              onClick={fetchAnalyticsData}
+              onClick={() => fetchAnalyticsData()}
               className="bg-blue-600 hover:bg-blue-700 text-white"
             >
               <RefreshCw className="mr-2 h-4 w-4" />
@@ -385,20 +355,14 @@ export default function Dashboard() {
                 {/* Stats Overview */}
                 <StatsOverview data={data} />
                 
-                {/* Status Breakdown and Usage by Time */}
+                {/* Activity Graphs */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <StatusBreakdown data={data} />
-                  <UsageByTime data={data} />
-                </div>
-                
-                {/* Templates and Users */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <TopTemplates data={data} />
+                  <DayActivity data={data} />
                   <TopUsers data={data} />
                 </div>
                 
-                {/* Project Activity */}
-                <ProjectActivity data={data} />
+                {/* Projects */}
+                <TopProjects data={data} />
                 
                 {/* Show empty state if no data */}
                 {data.length === 0 && !loading && (
