@@ -1,4 +1,5 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Users, Eye, X, Search, ArrowDown, ArrowUp } from 'lucide-react';
 import { UserStoryData } from '../types';
 
@@ -20,6 +21,33 @@ const TopUsers: React.FC<TopUsersProps> = ({ data }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [sortBy, setSortBy] = useState<'count' | 'email' | 'lastActive'>('count');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [modalRoot, setModalRoot] = useState<HTMLElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  // Set up portal root on component mount
+  useEffect(() => {
+    setModalRoot(document.body);
+    
+    // Add class to body when modal is shown to prevent scrolling
+    if (showAllUsers) {
+      document.body.style.overflow = 'hidden';
+    }
+    
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [showAllUsers]);
+
+  // Focus search input when modal opens
+  useEffect(() => {
+    if (showAllUsers && searchInputRef.current) {
+      setTimeout(() => {
+        if (searchInputRef.current) {
+          searchInputRef.current.focus();
+        }
+      }, 100);
+    }
+  }, [showAllUsers]);
 
   // Calculate user statistics from data
   const { userStats, topUsers } = useMemo(() => {
@@ -134,6 +162,11 @@ const TopUsers: React.FC<TopUsersProps> = ({ data }) => {
     }
   };
 
+  // Handle search input change
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSearchTerm(e.target.value);
+  };
+
   // Sort and filter users for all users modal
   const filteredSortedUsers = useMemo(() => {
     return userStats
@@ -177,213 +210,151 @@ const TopUsers: React.FC<TopUsersProps> = ({ data }) => {
     return colors[initial as keyof typeof colors] || 'bg-purple-600/20 text-purple-400';
   };
 
-  // Effect to manipulate DOM for modal
-  useEffect(() => {
-    // When modal is shown
-    if (showAllUsers) {
-      // Create modal container if it doesn't exist
-      let modalContainer = document.getElementById('top-users-modal');
-      if (!modalContainer) {
-        modalContainer = document.createElement('div');
-        modalContainer.id = 'top-users-modal';
-        document.body.appendChild(modalContainer);
-      }
-      
-      // Create the modal content
-      modalContainer.innerHTML = `
-        <div class="fixed inset-0 z-[9999] overflow-hidden">
-          <div class="absolute inset-0 bg-black/70" id="top-users-modal-backdrop"></div>
-          <div class="fixed inset-0 flex items-center justify-center p-4 pointer-events-none">
-            <div class="bg-slate-900 rounded-lg shadow-xl overflow-hidden w-full max-w-2xl pointer-events-auto" id="top-users-modal-content">
-              <div class="p-4 border-b border-slate-800 flex justify-between items-center">
-                <h3 class="text-lg font-medium text-white">
-                  Top Users (${userStats.length})
-                </h3>
-                <button id="top-users-modal-close" class="text-slate-400 hover:text-white">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
-                </button>
-              </div>
-              <div id="top-users-modal-body" class="p-4">
-                <!-- Content will be populated via JavaScript -->
-              </div>
-            </div>
+  // Reset search when closing modal
+  const handleCloseModal = () => {
+    setShowAllUsers(false);
+    setSearchTerm('');
+  };
+
+  // Toggle "View All Members" button
+  const handleViewAll = () => {
+    setShowAllUsers(true);
+  };
+
+  // Render "View All Members" button at bottom of component
+  const renderViewAllButton = () => {
+    return (
+      <div className="pt-2 flex justify-end">
+        <button
+          className="flex items-center text-xs text-blue-400 hover:text-blue-300 transition-colors"
+          onClick={handleViewAll}
+        >
+          <Eye className="w-4 h-4 mr-1" />
+          View All Members
+        </button>
+      </div>
+    );
+  };
+
+  // Modal component to be rendered in the portal
+  const AllUsersModal = () => {
+    if (!showAllUsers) return null;
+    
+    return (
+      <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/90">
+        <div className="w-full max-w-xl rounded-lg overflow-hidden bg-slate-800/90 backdrop-blur-sm border border-slate-700">
+          {/* Modal Header */}
+          <div className="flex justify-between items-center px-4 py-3 border-b border-slate-700">
+            <h3 className="text-lg font-medium text-white">
+              Top Users
+            </h3>
+            <button 
+              onClick={handleCloseModal}
+              className="text-slate-400 hover:text-white transition-colors"
+              aria-label="Close modal"
+            >
+              <X className="w-5 h-5" />
+            </button>
           </div>
-        </div>
-      `;
-      
-      // Render the modal body content
-      const modalBody = document.getElementById('top-users-modal-body');
-      if (modalBody) {
-        // Add search input
-        const searchHTML = `
-          <div class="mb-4">
-            <div class="relative">
-              <div class="absolute inset-y-0 left-3 flex items-center pointer-events-none">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-slate-500"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+          
+          {/* Search */}
+          <div className="px-4 pt-3 pb-2">
+            <div className="relative">
+              <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none">
+                <Search className="w-4 h-4 text-slate-500" />
               </div>
               <input
+                ref={searchInputRef}
                 type="text"
-                id="top-users-modal-search"
-                class="bg-slate-800 border-none rounded-lg w-full py-2.5 pl-10 pr-4 text-white text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="bg-slate-900 border-none rounded w-full py-2 pl-10 pr-4 text-white text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
                 placeholder="Search users..."
-                value="${searchTerm}"
+                value={searchTerm}
+                onChange={handleSearchChange}
+                aria-label="Search users"
               />
             </div>
           </div>
-        `;
-        modalBody.innerHTML = searchHTML;
-        
-        // Add table header
-        const tableHeaderHTML = `
-          <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-4 text-sm font-medium">
+          
+          {/* Table Header */}
+          <div className="px-4 py-2 flex justify-between items-center border-b border-slate-700 text-sm font-medium">
             <button
-              class="${sortBy === 'email' ? 'text-blue-400' : 'text-slate-400'}"
-              id="sort-by-email"
+              className={`flex items-center ${sortBy === 'email' ? 'text-blue-400' : 'text-slate-400'}`}
+              onClick={() => handleSortChange('email')}
             >
               User
-              ${sortBy === 'email' 
-                ? `<span class="ml-1 inline-block">${
-                    sortDirection === 'asc' 
-                      ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"></path></svg>'
-                      : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>'
-                  }</span>`
-                : ''
-              }
+              {sortBy === 'email' && (
+                <span className="ml-1">
+                  {sortDirection === 'asc' ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
+                </span>
+              )}
             </button>
-            
-            <div class="flex items-center">
+            <div className="flex items-center gap-10">
               <button
-                class="text-right w-20 ${sortBy === 'count' ? 'text-blue-400' : 'text-slate-400'}"
-                id="sort-by-count"
+                className={`flex items-center justify-end w-8 ${sortBy === 'count' ? 'text-blue-400' : 'text-slate-400'}`}
+                onClick={() => handleSortChange('count')}
               >
                 Stories
-                ${sortBy === 'count' 
-                  ? `<span class="ml-1 inline-block">${
-                      sortDirection === 'asc' 
-                        ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"></path></svg>'
-                        : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>'
-                    }</span>`
-                  : ''
-                }
+                {sortBy === 'count' && (
+                  <span className="ml-1">
+                    {sortDirection === 'asc' ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
+                  </span>
+                )}
               </button>
-              
               <button
-                class="text-right w-32 ml-8 ${sortBy === 'lastActive' ? 'text-blue-400' : 'text-slate-400'}"
-                id="sort-by-lastActive"
+                className={`flex items-center justify-end ${sortBy === 'lastActive' ? 'text-blue-400' : 'text-slate-400'}`}
+                onClick={() => handleSortChange('lastActive')}
               >
                 Last Active
-                ${sortBy === 'lastActive' 
-                  ? `<span class="ml-1 inline-block">${
-                      sortDirection === 'asc' 
-                        ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"></path></svg>'
-                        : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"></path></svg>'
-                    }</span>`
-                  : ''
-                }
+                {sortBy === 'lastActive' && (
+                  <span className="ml-1">
+                    {sortDirection === 'asc' ? <ArrowUp className="w-4 h-4" /> : <ArrowDown className="w-4 h-4" />}
+                  </span>
+                )}
               </button>
             </div>
           </div>
-        `;
-        modalBody.innerHTML += tableHeaderHTML;
-        
-        // Add user list container
-        const userListContainer = document.createElement('div');
-        userListContainer.id = 'user-list-container';
-        userListContainer.className = 'max-h-96 overflow-y-auto space-y-4';
-        modalBody.appendChild(userListContainer);
-        
-        // Populate user list
-        const userListHTML = filteredSortedUsers.map((user, index) => `
-          <div class="flex items-center justify-between py-2 ${index < filteredSortedUsers.length - 1 ? 'border-b border-slate-800' : ''}">
-            <div class="flex items-center">
-              <div class="${getAvatarColor(user.initial)} rounded-full h-9 w-9 flex items-center justify-center text-sm font-medium">
-                ${user.initial}
+          
+          {/* User List */}
+          <div className="max-h-96 overflow-y-auto">
+            {filteredSortedUsers.length === 0 ? (
+              <div className="py-6 text-center text-slate-400">
+                No users match your search
               </div>
-              <div class="ml-3">
-                <p class="text-sm font-medium text-white">
-                  ${user.email}
-                </p>
-              </div>
-            </div>
-            <div class="flex items-center">
-              <div class="w-20 text-right text-white font-medium">
-                ${user.count}
-              </div>
-              <div class="w-32 ml-8 text-right text-slate-400 text-sm">
-                ${formatDate(user.lastActive)}
-              </div>
-            </div>
+            ) : (
+              filteredSortedUsers.map((user) => (
+                <div
+                  key={user.email}
+                  className="flex items-center justify-between px-4 py-3 border-b border-slate-700/50 hover:bg-slate-700/30"
+                >
+                  <div className="flex items-center">
+                    <div className={`${getAvatarColor(user.initial)} rounded-full h-8 w-8 flex items-center justify-center text-sm font-medium`}>
+                      {user.initial}
+                    </div>
+                    <div className="ml-3">
+                      <p className="text-sm font-medium text-white">
+                        {user.email}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {user.projects.size} {user.projects.size === 1 ? 'project' : 'projects'} · {user.templates.size} {user.templates.size === 1 ? 'template' : 'templates'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-10">
+                    <div className="w-8 text-right text-white font-medium">
+                      {user.count}
+                    </div>
+                    <div className="text-right text-slate-400">
+                      {formatDate(user.lastActive)}
+                    </div>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
-        `).join('');
-        userListContainer.innerHTML = userListHTML;
-        
-        // Add event listeners
-        const modalBackdrop = document.getElementById('top-users-modal-backdrop');
-        const closeBtn = document.getElementById('top-users-modal-close');
-        const searchInput = document.getElementById('top-users-modal-search');
-        const sortEmailBtn = document.getElementById('sort-by-email');
-        const sortCountBtn = document.getElementById('sort-by-count');
-        const sortLastActiveBtn = document.getElementById('sort-by-lastActive');
-        
-        if (modalBackdrop) {
-          modalBackdrop.addEventListener('click', () => {
-            setShowAllUsers(false);
-          });
-        }
-        
-        if (closeBtn) {
-          closeBtn.addEventListener('click', () => {
-            setShowAllUsers(false);
-          });
-        }
-        
-        if (searchInput) {
-          searchInput.addEventListener('input', (e) => {
-            //@ts-ignore
-            setSearchTerm(e.target.value);
-          });
-        }
-        
-        if (sortEmailBtn) {
-          sortEmailBtn.addEventListener('click', () => {
-            handleSortChange('email');
-          });
-        }
-        
-        if (sortCountBtn) {
-          sortCountBtn.addEventListener('click', () => {
-            handleSortChange('count');
-          });
-        }
-        
-        if (sortLastActiveBtn) {
-          sortLastActiveBtn.addEventListener('click', () => {
-            handleSortChange('lastActive');
-          });
-        }
-      }
-      
-      // Prevent body scrolling
-      document.body.style.overflow = 'hidden';
-    } else {
-      // When modal is hidden, remove it and restore body scrolling
-      const modalContainer = document.getElementById('top-users-modal');
-      if (modalContainer) {
-        document.body.removeChild(modalContainer);
-      }
-      
-      document.body.style.overflow = '';
-    }
-    
-    // Clean up on unmount
-    return () => {
-      const modalContainer = document.getElementById('top-users-modal');
-      if (modalContainer) {
-        document.body.removeChild(modalContainer);
-      }
-      document.body.style.overflow = '';
-    };
-  }, [showAllUsers, searchTerm, sortBy, sortDirection, userStats, filteredSortedUsers]);
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="bg-slate-800/50 backdrop-blur-sm rounded-xl p-6 border border-slate-700">
@@ -400,41 +371,44 @@ const TopUsers: React.FC<TopUsersProps> = ({ data }) => {
           <p className="text-slate-500">No user data available</p>
         </div>
       ) : (
-        <div className="space-y-4">
-          {topUsers.map((user, index) => (
-            <div key={user.email} className="flex items-center justify-between">
-              <div className="flex items-center">
-                <div className="flex-shrink-0 w-6 text-center font-medium text-slate-500">
-                  {index + 1}
+        <>
+          <div className="space-y-4">
+            {topUsers.map((user, index) => (
+              <div key={user.email} className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <div className="flex-shrink-0 w-6 text-center font-medium text-slate-500">
+                    {index + 1}
+                  </div>
+                  <div className="flex items-center ml-3">
+                    <div className={`${getAvatarColor(user.initial)} rounded-full h-8 w-8 flex items-center justify-center text-sm font-medium`}>
+                      {user.initial}
+                    </div>
+                    <div className="ml-3">
+                      <p className="text-sm font-medium text-white truncate max-w-[150px]" title={user.email}>
+                        {formatUserEmail(user.email)}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        {user.projects.size} {user.projects.size === 1 ? 'project' : 'projects'} · {user.templates.size} {user.templates.size === 1 ? 'template' : 'templates'}
+                      </p>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center ml-3">
-                  <div className={`${getAvatarColor(user.initial)} rounded-full h-8 w-8 flex items-center justify-center text-sm font-medium`}>
-                    {user.initial}
-                  </div>
-                  <div className="ml-3">
-                    <p className="text-sm font-medium text-white truncate max-w-[150px]" title={user.email}>
-                      {formatUserEmail(user.email)}
-                    </p>
-                  </div>
+                <div className="text-right">
+                  <p className="text-sm font-medium text-white">{user.count}</p>
+                  <p className="text-xs text-slate-400">stories</p>
                 </div>
               </div>
-              <div className="text-right">
-                <p className="text-sm font-medium text-white">{user.count}</p>
-                <p className="text-xs text-slate-400">stories</p>
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
           
-          {userStats.length > 5 && (
-            <button
-              className="w-full mt-2 px-3 py-2 text-sm font-medium text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 rounded-md transition-colors flex items-center justify-center"
-              onClick={() => setShowAllUsers(true)}
-            >
-              <Eye className="w-4 h-4 mr-2" />
-              View All Members ({userStats.length})
-            </button>
-          )}
-        </div>
+          {userStats.length > 5 && renderViewAllButton()}
+        </>
+      )}
+      
+      {/* Portal for modal */}
+      {modalRoot && createPortal(
+        <AllUsersModal />,
+        modalRoot
       )}
     </div>
   );
