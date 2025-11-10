@@ -359,7 +359,7 @@ export default function Dashboard() {
                 </div>
                 
                 {/* Projects */}
-                <TopProjects data={data} />
+                {/* <TopProjects data={data} /> */}
                 
                 {/* Show empty state if no data */}
                 {data.length === 0 && !loading && (
