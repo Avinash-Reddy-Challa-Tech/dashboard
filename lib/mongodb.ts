@@ -85,16 +85,27 @@ export async function getDatabase(env: string = 'MONGODB_URI'): Promise<Db> {
       throw new Error('No MongoDB client promise available');
     }
     
-    // Wait for the connection and return the database
+    // Wait for the connection
     const client = await clientPromise;
-    return client.db('productowner-mode');
+    
+    // Simple database name selection
+    let databaseName: string;
+    if (clientType === 'dev') {
+      databaseName = 'productowner-mode-dev';
+    } else {
+      databaseName = 'productowner-mode';
+    }
+    
+    console.log(`Connecting to ${clientType} database: ${databaseName}`);
+    
+    return client.db(databaseName);
   } catch (error) {
     console.error(`Failed to connect to ${clientType} database:`, error);
     // Fallback to dev database if prod fails and dev is available
     if (clientType === 'prod' && clientPromises.dev) {
       console.warn('Falling back to development database');
       const devClient = await clientPromises.dev;
-      return devClient.db('productowner-mode');
+      return devClient.db('productowner-mode-dev');
     }
     throw error;
   }
