@@ -93,7 +93,7 @@ export async function getDatabase(env: string = 'MONGODB_URI'): Promise<Db> {
     if (clientType === 'dev') {
       databaseName = 'productowner-mode-dev';
     } else {
-      databaseName = 'productowner-mode';
+      databaseName = 'productowner-mode-prod';
     }
     
     console.log(`Connecting to ${clientType} database: ${databaseName}`);
