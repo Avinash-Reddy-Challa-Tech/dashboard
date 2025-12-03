@@ -32,6 +32,6 @@ export type Environment = 'dev' | 'prod';
 
 export const getArtifactUrl = (artifactId: string, environment: Environment, modeName: string): string => {
   const baseUrl = environment === 'dev' ? 'https://dev.appmod.ai' : 'https://appmod.ai';
-  const encodedModeName = encodeURIComponent('MMVF User Story Generation Mode');
+  const encodedModeName = encodeURIComponent('Requirement AI');
   return `${baseUrl}/artifact/${artifactId}/mode/${encodedModeName}`;
 };
