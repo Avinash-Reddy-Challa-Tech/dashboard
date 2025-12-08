@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { Clock, RefreshCw, CalendarIcon, DownloadIcon } from 'lucide-react';
+import { Clock, RefreshCw, CalendarIcon, DownloadIcon, Settings, Database } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import {
   Tabs,
@@ -25,6 +25,7 @@ import TopUsers from './components/TopUsers';
 import DataTable from './components/DataTable';
 import DayActivity from './components/DayActivity';
 import CustomDateRangePicker from './components/CustomRangePicker';
+import PromptManager from './Promptmanager';
 
 // Types
 import { TimeWindow, UserStoryData, Environment } from './types';
@@ -223,14 +224,19 @@ export default function Dashboard() {
 
   // Load data on component mount and when filters change
   useEffect(() => {
-    if (timeWindow !== 'Custom Range' || (customDateRange.from && customDateRange.to)) {
+    if ((timeWindow !== 'Custom Range' || (customDateRange.from && customDateRange.to)) && activeTab === 'overview') {
       fetchAnalyticsData();
     }
-  }, [environment]); // Only automatically refresh on environment change
+  }, [environment, activeTab]); // Only automatically refresh on environment change
 
   // Handle tab changes
   const handleTabChange = (value: string) => {
     setActiveTab(value);
+    
+    // Load analytics data when switching to overview tab
+    if (value === 'overview' && (timeWindow !== 'Custom Range' || (customDateRange.from && customDateRange.to))) {
+      fetchAnalyticsData();
+    }
   };
 
   return (
@@ -238,9 +244,11 @@ export default function Dashboard() {
       <div className="container mx-auto p-4 md:p-6 space-y-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div>
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white">UserStory Analytics Dashboard</h1>
+            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white">
+              ProductOwner Analytics & Prompt Management
+            </h1>
             <p className="text-slate-400">
-              Monitor user story generation and track usage patterns
+              Monitor user story generation and manage AI prompts across flows
             </p>
           </div>
           
@@ -260,49 +268,54 @@ export default function Dashboard() {
               </SelectContent>
             </Select>
             
-            {/* Time Window Selector */}
-            <Select value={timeWindow} onValueChange={handleTimeWindowChange}>
-              <SelectTrigger className="w-40 bg-slate-800 border-slate-700 text-white">
-                <SelectValue placeholder="Select time window" />
-              </SelectTrigger>
-              <SelectContent className="bg-slate-800 border-slate-700 text-white">
-                {timeWindows.map((window) => (
-                  <SelectItem key={window.label} value={window.label} className="focus:bg-slate-700 focus:text-white">
-                    {window.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            
-            {/* Custom Date Range Picker */}
-            {timeWindow === 'Custom Range' && (
-              <CustomDateRangePicker 
-                onDateRangeChange={handleCustomDateRangeChange}
-                open={showCustomDatePicker}
-                onOpenChange={setShowCustomDatePicker}
-              />
+            {/* Time Window Selector - Only show on overview tab */}
+            {activeTab === 'overview' && (
+              <>
+                <Select value={timeWindow} onValueChange={handleTimeWindowChange}>
+                  <SelectTrigger className="w-40 bg-slate-800 border-slate-700 text-white">
+                    <SelectValue placeholder="Select time window" />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-800 border-slate-700 text-white">
+                    {timeWindows.map((window) => (
+                      <SelectItem key={window.label} value={window.label} className="focus:bg-slate-700 focus:text-white">
+                        {window.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                
+                {/* Custom Date Range Picker */}
+                {timeWindow === 'Custom Range' && (
+                  <CustomDateRangePicker 
+                    onDateRangeChange={handleCustomDateRangeChange}
+                    open={showCustomDatePicker}
+                    onOpenChange={setShowCustomDatePicker}
+                  />
+                )}
+                
+                <Button 
+                  onClick={() => fetchAnalyticsData()}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Refresh
+                </Button>
+                
+                <Button 
+                  onClick={exportToCSV}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  disabled={data.length === 0}
+                >
+                  <DownloadIcon className="mr-2 h-4 w-4" />
+                  Export
+                </Button>
+              </>
             )}
-            
-            <Button 
-              onClick={() => fetchAnalyticsData()}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
-            >
-              <RefreshCw className="mr-2 h-4 w-4" />
-              Refresh
-            </Button>
-            
-            <Button 
-              onClick={exportToCSV}
-              className="bg-green-600 hover:bg-green-700 text-white"
-              disabled={data.length === 0}
-            >
-              <DownloadIcon className="mr-2 h-4 w-4" />
-              Export
-            </Button>
           </div>
         </div>
         
-        {lastFetched && (
+        {/* Environment and Last Updated Info */}
+        {activeTab === 'overview' && lastFetched && (
           <div className="flex items-center text-sm text-slate-400">
             <Clock className="mr-1 h-4 w-4" />
             Last updated: {lastFetched.toLocaleString()}
@@ -314,6 +327,7 @@ export default function Dashboard() {
           </div>
         )}
         
+        {/* Error Display */}
         {error && (
           <div className="p-4 mb-4 text-sm rounded-md border border-red-600 bg-red-900/20 text-red-400">
             <p>Error: {error}</p>
@@ -326,18 +340,26 @@ export default function Dashboard() {
           onValueChange={handleTabChange}
           className="space-y-6"
         >
-          <TabsList className="grid w-full md:w-[400px] grid-cols-2 bg-slate-800 p-1">
+          <TabsList className="grid w-full md:w-[600px] grid-cols-3 bg-slate-800 p-1">
             <TabsTrigger 
               value="overview"
               className="data-[state=active]:bg-blue-600 data-[state=active]:text-white"
             >
-              Overview
+              <Database className="mr-2 h-4 w-4" />
+              Analytics
             </TabsTrigger>
             <TabsTrigger 
               value="data"
               className="data-[state=active]:bg-blue-600 data-[state=active]:text-white"
             >
               Data Table
+            </TabsTrigger>
+            <TabsTrigger 
+              value="prompts"
+              className="data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+            >
+              <Settings className="mr-2 h-4 w-4" />
+              Prompt Management
             </TabsTrigger>
           </TabsList>
           
@@ -358,7 +380,7 @@ export default function Dashboard() {
                   <TopUsers data={data} />
                 </div>
                 
-                {/* Projects */}
+                {/* Projects - Uncomment if needed */}
                 {/* <TopProjects data={data} /> */}
                 
                 {/* Show empty state if no data */}
@@ -380,6 +402,10 @@ export default function Dashboard() {
               onRefresh={fetchAnalyticsData}
               customDateRange={customDateRange}
             />
+          </TabsContent>
+          
+          <TabsContent value="prompts">
+            <PromptManager environment={environment} />
           </TabsContent>
         </Tabs>
       </div>
