@@ -199,8 +199,8 @@ export default function PromptManager({ environment }: PromptManagerProps) {
     if (formData.flow && prompts.length > 0) {
       const features = getFeaturesByFlow(prompts, formData.flow);
       setAvailableFeatures(features);
-      // Reset feature if it's not available in new flow
-      if (!features.includes(formData.feature)) {
+      // Only reset feature if it's not custom and not available in new flow
+      if (formData.feature && !features.includes(formData.feature) && features.length > 0) {
         setFormData(prev => ({ ...prev, feature: '', type: '' }));
       }
     } else {
@@ -213,8 +213,8 @@ export default function PromptManager({ environment }: PromptManagerProps) {
     if (formData.flow && formData.feature && formData.mode && prompts.length > 0) {
       const types = getTypesByFlowFeatureMode(prompts, formData.flow, formData.feature, formData.mode);
       setAvailableTypes(types.length > 0 ? types : COMMON_PROMPT_TYPES);
-      // Reset type if it's not available
-      if (!types.includes(formData.type)) {
+      // Only reset type if it's not custom and not available
+      if (formData.type && !types.includes(formData.type) && types.length > 0) {
         setFormData(prev => ({ ...prev, type: '' }));
       }
     } else {
@@ -409,10 +409,10 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                   <div className="space-y-2">
                     {availableFlows.length > 0 && (
                       <Select
-                        value={formData.flow || 'none_selected'}
+                        value={availableFlows.includes(formData.flow) ? formData.flow : 'none_selected'}
                         onValueChange={(value) => {
                           if (value === 'custom' || value === 'none_selected') return;
-                          setFormData(prev => ({ ...prev, flow: value, feature: '', type: '' }));
+                          setFormData(prev => ({ ...prev, flow: value }));
                         }}
                       >
                         <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
@@ -435,7 +435,7 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                     )}
                     <Input
                       value={formData.flow}
-                      onChange={(e) => setFormData(prev => ({ ...prev, flow: e.target.value, feature: '', type: '' }))}
+                      onChange={(e) => setFormData(prev => ({ ...prev, flow: e.target.value }))}
                       placeholder={availableFlows.length > 0 ? "Or enter new flow name" : "Enter flow name"}
                       className="bg-slate-700 border-slate-600 text-white"
                       required
@@ -449,10 +449,10 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                   <div className="space-y-2">
                     {availableFeatures.length > 0 && (
                       <Select
-                        value={formData.feature || 'none_selected'}
+                        value={availableFeatures.includes(formData.feature) ? formData.feature : 'none_selected'}
                         onValueChange={(value) => {
                           if (value === 'custom' || value === 'none_selected') return;
-                          setFormData(prev => ({ ...prev, feature: value, type: '' }));
+                          setFormData(prev => ({ ...prev, feature: value }));
                         }}
                       >
                         <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
@@ -475,7 +475,7 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                     )}
                     <Input
                       value={formData.feature}
-                      onChange={(e) => setFormData(prev => ({ ...prev, feature: e.target.value, type: '' }))}
+                      onChange={(e) => setFormData(prev => ({ ...prev, feature: e.target.value }))}
                       placeholder={availableFeatures.length > 0 ? "Or enter new feature name" : "Enter feature name"}
                       className="bg-slate-700 border-slate-600 text-white"
                       required
@@ -488,7 +488,7 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                   <label className="text-sm font-medium text-white">Mode *</label>
                   <Select
                     value={formData.mode}
-                    onValueChange={(value: 'chat' | 'stormee') => setFormData(prev => ({ ...prev, mode: value, type: '' }))}
+                    onValueChange={(value: 'chat' | 'stormee') => setFormData(prev => ({ ...prev, mode: value }))}
                     required
                   >
                     <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
@@ -506,7 +506,7 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                   <label className="text-sm font-medium text-white">Type *</label>
                   <div className="space-y-2">
                     <Select
-                      value={formData.type || 'none_selected'}
+                      value={availableTypes.includes(formData.type) ? formData.type : 'none_selected'}
                       onValueChange={(value) => {
                         if (value === 'custom' || value === 'none_selected') return;
                         setFormData(prev => ({ ...prev, type: value }));
