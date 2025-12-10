@@ -39,14 +39,12 @@ import {
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { format } from "date-fns";
 
-// Import types
+// Import types/helpers
 import { 
   PromptVersion, 
   PromptFormData, 
@@ -100,20 +98,20 @@ export default function PromptManager({ environment }: PromptManagerProps) {
   // Filter state
   const [filters, setFilters] = useState<PromptFilterState>({});
 
+  // ===========================
   // Load prompts and extract dynamic structure
+  // ===========================
   const loadPrompts = async () => {
     setLoading(true);
     setError(null);
     
     try {
-      // Build query params for filtering
       const params = new URLSearchParams();
       if (filters.flow) params.append('flow', filters.flow);
       if (filters.promptTitle) params.append('promptTitle', filters.promptTitle);
       if (filters.mode) params.append('mode', filters.mode);
       if (filters.promptDescription) params.append('promptDescription', filters.promptDescription);
       
-      // Make request to your existing backend
       const url = params.toString() 
         ? `${API_BASE_URL}/prompt-version?${params.toString()}` 
         : `${API_BASE_URL}/prompt-version`;
@@ -131,7 +129,6 @@ export default function PromptManager({ environment }: PromptManagerProps) {
       
       const result = await response.json();
       
-      // Handle different response formats from your backend
       let promptsData: PromptVersion[] = [];
       if (Array.isArray(result)) {
         promptsData = result;
@@ -140,13 +137,10 @@ export default function PromptManager({ environment }: PromptManagerProps) {
       } else if (result.message === "Prompt not found") {
         promptsData = [];
       } else {
-        // Single prompt returned
         promptsData = [result];
       }
       
       setPrompts(promptsData);
-      
-      // Extract available flows for dropdowns
       setAvailableFlows(getUniqueFlows(promptsData));
       
     } catch (err) {
@@ -158,7 +152,9 @@ export default function PromptManager({ environment }: PromptManagerProps) {
     }
   };
 
+  // ===========================
   // Load versions for a specific prompt
+  // ===========================
   const loadVersions = async (promptId: string) => {
     try {
       const response = await fetch(`${API_BASE_URL}/prompt-version?promptId=${promptId}`, {
@@ -174,7 +170,6 @@ export default function PromptManager({ environment }: PromptManagerProps) {
       
       const result = await response.json();
       
-      // Handle response format
       let versionsData: PromptVersion[] = [];
       if (Array.isArray(result)) {
         versionsData = result;
@@ -184,7 +179,6 @@ export default function PromptManager({ environment }: PromptManagerProps) {
         versionsData = [result];
       }
       
-      // Sort by version descending
       versionsData.sort((a, b) => (b.version || 0) - (a.version || 0));
       
       setVersions(versionsData);
@@ -194,12 +188,13 @@ export default function PromptManager({ environment }: PromptManagerProps) {
     }
   };
 
+  // ===========================
   // Update available promptTitles when flow changes
+  // ===========================
   useEffect(() => {
     if (formData.flow && prompts.length > 0) {
       const promptTitles = getFeaturesByFlow(prompts, formData.flow);
       setAvailablePromptTitles(promptTitles);
-      // Only reset promptTitle if it's not custom and not available in new flow
       if (
         formData.promptTitle &&
         !promptTitles.includes(formData.promptTitle) &&
@@ -212,36 +207,20 @@ export default function PromptManager({ environment }: PromptManagerProps) {
     }
   }, [formData.flow, prompts]);
 
-  // Auto-generate promptId
-  useEffect(() => {
-    if (
-      formData.flow &&
-      formData.promptTitle &&
-      formData.mode &&
-      formData.promptDescription &&
-      !isEditing
-    ) {
-      const generatedId = normalizePromptId(
-        formData.flow,
-        formData.promptTitle,
-        formData.mode,
-        formData.promptDescription
-      );
-      setFormData(prev => ({ ...prev, promptId: generatedId }));
-    }
-  }, [formData.flow, formData.promptTitle, formData.mode, formData.promptDescription, isEditing]);
-
+  // ===========================
   // Load prompts on component mount and when environment/filters change
+  // ===========================
   useEffect(() => {
     loadPrompts();
   }, [environment, filters]);
 
+  // ===========================
   // Handle form submission
+  // ===========================
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     try {
-      // Validate required fields
       if (
         !formData.flow.trim() ||
         !formData.promptTitle.trim() ||
@@ -251,16 +230,8 @@ export default function PromptManager({ environment }: PromptManagerProps) {
         throw new Error('Please fill in all required fields');
       }
 
-      // Prepare payload for your backend format
-      const payload = {
-        promptId:
-          formData.promptId ||
-          normalizePromptId(
-            formData.flow,
-            formData.promptTitle,
-            formData.mode,
-            formData.promptDescription
-          ),
+      // Base payload for backend
+      const payload: any = {
         flow: formData.flow,
         promptTitle: formData.promptTitle,
         mode: formData.mode,
@@ -272,10 +243,17 @@ export default function PromptManager({ environment }: PromptManagerProps) {
           tokens: formData.metadata.tokens || 0
         }
       };
-      
+
+      // IMPORTANT:
+      // - For CREATE (POST): we do NOT send promptId (backend will generate UUID)
+      // - For EDIT (PUT): we MUST send the existing promptId so backend versions correctly
+      if (isEditing && formData.promptId) {
+        payload.promptId = formData.promptId;
+      }
+
       const method = isEditing ? 'PUT' : 'POST';
       const response = await fetch(`${API_BASE_URL}/prompt-version`, {
-        method: method,
+        method,
         headers: {
           'Content-Type': 'application/json',
         },
@@ -301,8 +279,6 @@ export default function PromptManager({ environment }: PromptManagerProps) {
       setIsEditing(false);
       setEditingPrompt(null);
       await loadPrompts();
-      
-      // Show success message
       setError(null);
       
     } catch (err) {
@@ -311,7 +287,9 @@ export default function PromptManager({ environment }: PromptManagerProps) {
     }
   };
 
+  // ===========================
   // Handle edit
+  // ===========================
   const handleEdit = (prompt: PromptVersion) => {
     setFormData({
       promptId: prompt.promptId,
@@ -327,7 +305,9 @@ export default function PromptManager({ environment }: PromptManagerProps) {
     setIsDialogOpen(true);
   };
 
+  // ===========================
   // Handle delete
+  // ===========================
   const handleDelete = async (promptId: string, version: number) => {
     if (!confirm('Are you sure you want to delete this prompt version?')) {
       return;
@@ -354,22 +334,27 @@ export default function PromptManager({ environment }: PromptManagerProps) {
     }
   };
 
+  // ===========================
   // Filter prompts based on search
+  // ===========================
   const filteredPrompts = prompts.filter(prompt => {
     if (!filters.search) return true;
     
     const searchLower = filters.search.toLowerCase();
     return (
-      prompt.promptId.toLowerCase().includes(searchLower) ||
-      prompt.flow.toLowerCase().includes(searchLower) ||
-      prompt.promptTitle.toLowerCase().includes(searchLower) ||
-      prompt.mode.toLowerCase().includes(searchLower) ||
-      prompt.promptDescription.toLowerCase().includes(searchLower) ||
-      prompt.prompt.toLowerCase().includes(searchLower) ||
-      prompt.metadata.author?.toLowerCase().includes(searchLower)
+      (prompt.promptId || '').toLowerCase().includes(searchLower) ||
+      (prompt.flow || '').toLowerCase().includes(searchLower) ||
+      (prompt.promptTitle || '').toLowerCase().includes(searchLower) ||
+      (prompt.mode || '').toLowerCase().includes(searchLower) ||
+      (prompt.promptDescription || '').toLowerCase().includes(searchLower) ||
+      (prompt.prompt || '').toLowerCase().includes(searchLower) ||
+      (prompt.metadata.author || '').toLowerCase().includes(searchLower)
     );
   });
 
+  // ===========================
+  // JSX
+  // ===========================
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -414,6 +399,7 @@ export default function PromptManager({ environment }: PromptManagerProps) {
               </DialogTitle>
             </DialogHeader>
             
+            {/* FORM */}
             <form onSubmit={handleSubmit} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {/* Flow - Allow free text input for new flows */}
@@ -547,7 +533,6 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                 {/* Prompt Description - Free text only */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-white">Prompt Description *</label>
-
                   <Textarea
                     value={formData.promptDescription}
                     onChange={(e) =>
@@ -562,18 +547,20 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                     className="bg-slate-700 border-slate-600 text-white"
                   />
                 </div>
-            </div>
-              
-              {/* Prompt ID (auto-generated) */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-white">Prompt ID</label>
-                <Input
-                  value={formData.promptId}
-                  onChange={(e) => setFormData(prev => ({ ...prev, promptId: e.target.value }))}
-                  placeholder="Auto-generated from flow-title-mode-description"
-                  className="bg-slate-700 border-slate-600 text-white"
-                />
               </div>
+              
+              {/* Prompt ID - ONLY in edit mode, read-only */}
+              {isEditing && (
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-white">Prompt ID</label>
+                  <Input
+                    value={formData.promptId}
+                    readOnly
+                    disabled
+                    className="bg-slate-800 border-slate-600 text-slate-300 cursor-not-allowed"
+                  />
+                </div>
+              )}
               
               {/* Prompt Content */}
               <div className="space-y-2">
