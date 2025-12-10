@@ -77,18 +77,18 @@ export default function PromptManager({ environment }: PromptManagerProps) {
   const [viewingVersions, setViewingVersions] = useState<string | null>(null);
   const [versions, setVersions] = useState<PromptVersion[]>([]);
   
-  // Dynamic flow/feature data
+  // Dynamic flow/promptTitle data
   const [availableFlows, setAvailableFlows] = useState<string[]>([]);
-  const [availableFeatures, setAvailableFeatures] = useState<string[]>([]);
-  const [availableTypes, setAvailableTypes] = useState<string[]>([]);
+  const [availablePromptTitles, setAvailablePromptTitles] = useState<string[]>([]);
+  const [availablePromptDescriptions, setAvailablePromptDescriptions] = useState<string[]>([]);
   
   // Form state
   const [formData, setFormData] = useState<PromptFormData>({
     promptId: '',
     flow: '',
-    feature: '',
-    mode: 'chat',
-    type: '',
+    promptTitle: '',
+    mode: 'Userstory',
+    promptDescription: '',
     prompt: '',
     metadata: {
       author: '',
@@ -109,9 +109,9 @@ export default function PromptManager({ environment }: PromptManagerProps) {
       // Build query params for filtering
       const params = new URLSearchParams();
       if (filters.flow) params.append('flow', filters.flow);
-      if (filters.feature) params.append('feature', filters.feature);
+      if (filters.promptTitle) params.append('promptTitle', filters.promptTitle);
       if (filters.mode) params.append('mode', filters.mode);
-      if (filters.type) params.append('type', filters.type);
+      if (filters.promptDescription) params.append('promptDescription', filters.promptDescription);
       
       // Make request to your existing backend
       const url = params.toString() 
@@ -194,41 +194,42 @@ export default function PromptManager({ environment }: PromptManagerProps) {
     }
   };
 
-  // Update available features when flow changes
+  // Update available promptTitles when flow changes
   useEffect(() => {
     if (formData.flow && prompts.length > 0) {
-      const features = getFeaturesByFlow(prompts, formData.flow);
-      setAvailableFeatures(features);
-      // Only reset feature if it's not custom and not available in new flow
-      if (formData.feature && !features.includes(formData.feature) && features.length > 0) {
-        setFormData(prev => ({ ...prev, feature: '', type: '' }));
+      const promptTitles = getFeaturesByFlow(prompts, formData.flow);
+      setAvailablePromptTitles(promptTitles);
+      // Only reset promptTitle if it's not custom and not available in new flow
+      if (
+        formData.promptTitle &&
+        !promptTitles.includes(formData.promptTitle) &&
+        promptTitles.length > 0
+      ) {
+        setFormData(prev => ({ ...prev, promptTitle: '', promptDescription: '' }));
       }
     } else {
-      setAvailableFeatures([]);
+      setAvailablePromptTitles([]);
     }
   }, [formData.flow, prompts]);
 
-  // Update available types when flow, feature, or mode changes
-  useEffect(() => {
-    if (formData.flow && formData.feature && formData.mode && prompts.length > 0) {
-      const types = getTypesByFlowFeatureMode(prompts, formData.flow, formData.feature, formData.mode);
-      setAvailableTypes(types.length > 0 ? types : COMMON_PROMPT_TYPES);
-      // Only reset type if it's not custom and not available
-      if (formData.type && !types.includes(formData.type) && types.length > 0) {
-        setFormData(prev => ({ ...prev, type: '' }));
-      }
-    } else {
-      setAvailableTypes(COMMON_PROMPT_TYPES);
-    }
-  }, [formData.flow, formData.feature, formData.mode, prompts]);
-
   // Auto-generate promptId
   useEffect(() => {
-    if (formData.flow && formData.feature && formData.mode && formData.type && !isEditing) {
-      const generatedId = normalizePromptId(formData.flow, formData.feature, formData.mode, formData.type);
+    if (
+      formData.flow &&
+      formData.promptTitle &&
+      formData.mode &&
+      formData.promptDescription &&
+      !isEditing
+    ) {
+      const generatedId = normalizePromptId(
+        formData.flow,
+        formData.promptTitle,
+        formData.mode,
+        formData.promptDescription
+      );
       setFormData(prev => ({ ...prev, promptId: generatedId }));
     }
-  }, [formData.flow, formData.feature, formData.mode, formData.type, isEditing]);
+  }, [formData.flow, formData.promptTitle, formData.mode, formData.promptDescription, isEditing]);
 
   // Load prompts on component mount and when environment/filters change
   useEffect(() => {
@@ -241,17 +242,29 @@ export default function PromptManager({ environment }: PromptManagerProps) {
     
     try {
       // Validate required fields
-      if (!formData.flow.trim() || !formData.feature.trim() || !formData.type.trim() || !formData.prompt.trim()) {
+      if (
+        !formData.flow.trim() ||
+        !formData.promptTitle.trim() ||
+        !formData.promptDescription.trim() ||
+        !formData.prompt.trim()
+      ) {
         throw new Error('Please fill in all required fields');
       }
 
       // Prepare payload for your backend format
       const payload = {
-        promptId: formData.promptId || normalizePromptId(formData.flow, formData.feature, formData.mode, formData.type),
+        promptId:
+          formData.promptId ||
+          normalizePromptId(
+            formData.flow,
+            formData.promptTitle,
+            formData.mode,
+            formData.promptDescription
+          ),
         flow: formData.flow,
-        feature: formData.feature,
+        promptTitle: formData.promptTitle,
         mode: formData.mode,
-        type: formData.type,
+        promptDescription: formData.promptDescription,
         prompt: formData.prompt,
         metadata: {
           author: formData.metadata.author || '',
@@ -278,9 +291,9 @@ export default function PromptManager({ environment }: PromptManagerProps) {
       setFormData({
         promptId: '',
         flow: '',
-        feature: '',
-        mode: 'chat',
-        type: '',
+        promptTitle: '',
+        mode: 'Userstory',
+        promptDescription: '',
         prompt: '',
         metadata: { author: '', changelog: '', tokens: 0 }
       });
@@ -303,9 +316,9 @@ export default function PromptManager({ environment }: PromptManagerProps) {
     setFormData({
       promptId: prompt.promptId,
       flow: prompt.flow,
-      feature: prompt.feature,
+      promptTitle: prompt.promptTitle,
       mode: prompt.mode,
-      type: prompt.type,
+      promptDescription: prompt.promptDescription,
       prompt: prompt.prompt,
       metadata: prompt.metadata
     });
@@ -349,9 +362,9 @@ export default function PromptManager({ environment }: PromptManagerProps) {
     return (
       prompt.promptId.toLowerCase().includes(searchLower) ||
       prompt.flow.toLowerCase().includes(searchLower) ||
-      prompt.feature.toLowerCase().includes(searchLower) ||
+      prompt.promptTitle.toLowerCase().includes(searchLower) ||
       prompt.mode.toLowerCase().includes(searchLower) ||
-      prompt.type.toLowerCase().includes(searchLower) ||
+      prompt.promptDescription.toLowerCase().includes(searchLower) ||
       prompt.prompt.toLowerCase().includes(searchLower) ||
       prompt.metadata.author?.toLowerCase().includes(searchLower)
     );
@@ -364,7 +377,7 @@ export default function PromptManager({ environment }: PromptManagerProps) {
         <div>
           <h2 className="text-2xl font-bold text-white">Prompt Management</h2>
           <p className="text-slate-400">
-            Manage and version your AI prompts across flows, features, and modes
+            Manage and version your AI prompts across flows, titles, and modes
           </p>
           <p className="text-slate-500 text-sm mt-1">
             Backend: {API_BASE_URL}/prompt-version
@@ -381,9 +394,9 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                 setFormData({
                   promptId: '',
                   flow: '',
-                  feature: '',
-                  mode: 'chat',
-                  type: '',
+                  promptTitle: '',
+                  mode: 'Userstory',
+                  promptDescription: '',
                   prompt: '',
                   metadata: { author: '', changelog: '', tokens: 0 }
                 });
@@ -443,40 +456,50 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                   </div>
                 </div>
                 
-                {/* Feature - Allow free text input for new features */}
+                {/* Prompt Title - Allow free text input for new titles */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-white">Feature *</label>
+                  <label className="text-sm font-medium text-white">Prompt Title *</label>
                   <div className="space-y-2">
-                    {availableFeatures.length > 0 && (
+                    {availablePromptTitles.length > 0 && (
                       <Select
-                        value={availableFeatures.includes(formData.feature) ? formData.feature : 'none_selected'}
+                        value={
+                          availablePromptTitles.includes(formData.promptTitle)
+                            ? formData.promptTitle
+                            : 'none_selected'
+                        }
                         onValueChange={(value) => {
                           if (value === 'custom' || value === 'none_selected') return;
-                          setFormData(prev => ({ ...prev, feature: value }));
+                          setFormData(prev => ({ ...prev, promptTitle: value }));
                         }}
                       >
                         <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
-                          <SelectValue placeholder="Select existing feature" />
+                          <SelectValue placeholder="Select existing prompt title" />
                         </SelectTrigger>
                         <SelectContent className="bg-slate-700 border-slate-600">
                           <SelectItem value="none_selected" className="text-slate-400 italic">
-                            Select existing feature...
+                            Select existing prompt title...
                           </SelectItem>
-                          {availableFeatures.map((feature) => (
-                            <SelectItem key={feature} value={feature} className="text-white">
-                              {feature.replace(/_/g, ' ')}
+                          {availablePromptTitles.map((title) => (
+                            <SelectItem key={title} value={title} className="text-white">
+                              {title.replace(/_/g, ' ')}
                             </SelectItem>
                           ))}
                           <SelectItem value="custom" className="text-blue-400 font-medium">
-                            + Create New Feature
+                            + Create New Prompt Title
                           </SelectItem>
                         </SelectContent>
                       </Select>
                     )}
                     <Input
-                      value={formData.feature}
-                      onChange={(e) => setFormData(prev => ({ ...prev, feature: e.target.value }))}
-                      placeholder={availableFeatures.length > 0 ? "Or enter new feature name" : "Enter feature name"}
+                      value={formData.promptTitle}
+                      onChange={(e) =>
+                        setFormData(prev => ({ ...prev, promptTitle: e.target.value }))
+                      }
+                      placeholder={
+                        availablePromptTitles.length > 0
+                          ? "Or enter new prompt title"
+                          : "Enter prompt title"
+                      }
                       className="bg-slate-700 border-slate-600 text-white"
                       required
                     />
@@ -488,57 +511,58 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                   <label className="text-sm font-medium text-white">Mode *</label>
                   <Select
                     value={formData.mode}
-                    onValueChange={(value: 'chat' | 'stormee') => setFormData(prev => ({ ...prev, mode: value }))}
+                    onValueChange={(
+                      value:
+                        | 'CRA'
+                        | 'Userstory'
+                        | 'MMVF'
+                        | 'Stormee-normal'
+                        | 'Stormee-Cra'
+                    ) => setFormData(prev => ({ ...prev, mode: value }))}
                     required
                   >
                     <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
                       <SelectValue placeholder="Select mode" />
                     </SelectTrigger>
                     <SelectContent className="bg-slate-700 border-slate-600">
-                      <SelectItem value="chat" className="text-white">Chat</SelectItem>
-                      <SelectItem value="stormee" className="text-white">Stormee (Voice)</SelectItem>
+                      <SelectItem value="CRA" className="text-white">
+                        CRA
+                      </SelectItem>
+                      <SelectItem value="Userstory" className="text-white">
+                        Userstory
+                      </SelectItem>
+                      <SelectItem value="MMVF" className="text-white">
+                        MMVF
+                      </SelectItem>
+                      <SelectItem value="Stormee-normal" className="text-white">
+                        Stormee (Normal)
+                      </SelectItem>
+                      <SelectItem value="Stormee-Cra" className="text-white">
+                        Stormee (CRA)
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
                 
-                {/* Type - Allow free text input for new types */}
+                {/* Prompt Description - Free text only */}
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-white">Type *</label>
-                  <div className="space-y-2">
-                    <Select
-                      value={availableTypes.includes(formData.type) ? formData.type : 'none_selected'}
-                      onValueChange={(value) => {
-                        if (value === 'custom' || value === 'none_selected') return;
-                        setFormData(prev => ({ ...prev, type: value }));
-                      }}
-                    >
-                      <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
-                        <SelectValue placeholder="Select type" />
-                      </SelectTrigger>
-                      <SelectContent className="bg-slate-700 border-slate-600">
-                        <SelectItem value="none_selected" className="text-slate-400 italic">
-                          Select existing type...
-                        </SelectItem>
-                        {availableTypes.map((type) => (
-                          <SelectItem key={type} value={type} className="text-white">
-                            {type.replace(/_/g, ' ')}
-                          </SelectItem>
-                        ))}
-                        <SelectItem value="custom" className="text-blue-400 font-medium">
-                          + Create New Type
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Input
-                      value={formData.type}
-                      onChange={(e) => setFormData(prev => ({ ...prev, type: e.target.value }))}
-                      placeholder="Or enter new type name"
-                      className="bg-slate-700 border-slate-600 text-white"
-                      required
-                    />
-                  </div>
+                  <label className="text-sm font-medium text-white">Prompt Description *</label>
+
+                  <Textarea
+                    value={formData.promptDescription}
+                    onChange={(e) =>
+                      setFormData(prev => ({
+                        ...prev,
+                        promptDescription: e.target.value,
+                      }))
+                    }
+                    placeholder="Enter prompt description..."
+                    required
+                    rows={4}
+                    className="bg-slate-700 border-slate-600 text-white"
+                  />
                 </div>
-              </div>
+            </div>
               
               {/* Prompt ID (auto-generated) */}
               <div className="space-y-2">
@@ -546,7 +570,7 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                 <Input
                   value={formData.promptId}
                   onChange={(e) => setFormData(prev => ({ ...prev, promptId: e.target.value }))}
-                  placeholder="Auto-generated from flow-feature-mode-type"
+                  placeholder="Auto-generated from flow-title-mode-description"
                   className="bg-slate-700 border-slate-600 text-white"
                 />
               </div>
@@ -570,10 +594,12 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                   <label className="text-sm font-medium text-white">Author</label>
                   <Input
                     value={formData.metadata.author || ''}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      metadata: { ...prev.metadata, author: e.target.value }
-                    }))}
+                    onChange={(e) =>
+                      setFormData(prev => ({
+                        ...prev,
+                        metadata: { ...prev.metadata, author: e.target.value }
+                      }))
+                    }
                     placeholder="Author name"
                     className="bg-slate-700 border-slate-600 text-white"
                   />
@@ -584,10 +610,15 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                   <Input
                     type="number"
                     value={formData.metadata.tokens || 0}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      metadata: { ...prev.metadata, tokens: parseInt(e.target.value) || 0 }
-                    }))}
+                    onChange={(e) =>
+                      setFormData(prev => ({
+                        ...prev,
+                        metadata: {
+                          ...prev.metadata,
+                          tokens: parseInt(e.target.value) || 0
+                        }
+                      }))
+                    }
                     placeholder="0"
                     className="bg-slate-700 border-slate-600 text-white"
                   />
@@ -597,10 +628,12 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                   <label className="text-sm font-medium text-white">Changelog</label>
                   <Input
                     value={formData.metadata.changelog || ''}
-                    onChange={(e) => setFormData(prev => ({
-                      ...prev,
-                      metadata: { ...prev.metadata, changelog: e.target.value }
-                    }))}
+                    onChange={(e) =>
+                      setFormData(prev => ({
+                        ...prev,
+                        metadata: { ...prev.metadata, changelog: e.target.value }
+                      }))
+                    }
                     placeholder="What changed in this version?"
                     className="bg-slate-700 border-slate-600 text-white"
                   />
@@ -648,12 +681,14 @@ export default function PromptManager({ environment }: PromptManagerProps) {
             
             <Select
               value={filters.flow || 'all_flows'}
-              onValueChange={(value) => setFilters(prev => ({ 
-                ...prev, 
-                flow: value === 'all_flows' ? undefined : value,
-                feature: undefined,
-                type: undefined
-              }))}
+              onValueChange={(value) =>
+                setFilters(prev => ({ 
+                  ...prev, 
+                  flow: value === 'all_flows' ? undefined : value,
+                  promptTitle: undefined,
+                  promptDescription: undefined
+                }))
+              }
             >
               <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
                 <SelectValue placeholder="All flows" />
@@ -669,66 +704,85 @@ export default function PromptManager({ environment }: PromptManagerProps) {
             </Select>
             
             <Select
-              value={filters.feature || 'all_features'}
-              onValueChange={(value) => setFilters(prev => ({ 
-                ...prev, 
-                feature: value === 'all_features' ? undefined : value,
-                type: undefined
-              }))}
+              value={filters.promptTitle || 'all_promptTitles'}
+              onValueChange={(value) =>
+                setFilters(prev => ({ 
+                  ...prev, 
+                  promptTitle: value === 'all_promptTitles' ? undefined : value,
+                  promptDescription: undefined
+                }))
+              }
               disabled={!filters.flow}
             >
               <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
-                <SelectValue placeholder="All features" />
+                <SelectValue placeholder="All prompt titles" />
               </SelectTrigger>
               <SelectContent className="bg-slate-700 border-slate-600">
-                <SelectItem value="all_features" className="text-white">All features</SelectItem>
-                {filters.flow && getFeaturesByFlow(prompts, filters.flow).map((feature) => (
-                  <SelectItem key={feature} value={feature} className="text-white">
-                    {feature.replace(/_/g, ' ')}
-                  </SelectItem>
-                ))}
+                <SelectItem value="all_promptTitles" className="text-white">
+                  All prompt titles
+                </SelectItem>
+                {filters.flow &&
+                  getFeaturesByFlow(prompts, filters.flow).map((title) => (
+                    <SelectItem key={title} value={title} className="text-white">
+                      {title.replace(/_/g, ' ')}
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
             
             <Select
               value={filters.mode || 'all_modes'}
-              onValueChange={(value) => setFilters(prev => ({ 
-                ...prev, 
-                mode: value === 'all_modes' ? undefined : (value as 'chat' | 'stormee')
-              }))}
+              onValueChange={(value) =>
+                setFilters(prev => ({ 
+                  ...prev, 
+                  mode:
+                    value === 'all_modes'
+                      ? undefined
+                      : (value as
+                          | 'CRA'
+                          | 'Userstory'
+                          | 'MMVF'
+                          | 'Stormee-normal'
+                          | 'Stormee-Cra')
+                }))
+              }
             >
               <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
                 <SelectValue placeholder="All modes" />
               </SelectTrigger>
               <SelectContent className="bg-slate-700 border-slate-600">
-                <SelectItem value="all_modes" className="text-white">All modes</SelectItem>
-                <SelectItem value="chat" className="text-white">Chat</SelectItem>
-                <SelectItem value="stormee" className="text-white">Stormee</SelectItem>
+                <SelectItem value="all_modes" className="text-white">
+                  All modes
+                </SelectItem>
+                <SelectItem value="CRA" className="text-white">
+                  CRA
+                </SelectItem>
+                <SelectItem value="Userstory" className="text-white">
+                  Userstory
+                </SelectItem>
+                <SelectItem value="MMVF" className="text-white">
+                  MMVF
+                </SelectItem>
+                <SelectItem value="Stormee-normal" className="text-white">
+                  Stormee (Normal)
+                </SelectItem>
+                <SelectItem value="Stormee-Cra" className="text-white">
+                  Stormee (CRA)
+                </SelectItem>
               </SelectContent>
             </Select>
             
-            <Select
-              value={filters.type || 'all_types'}
-              onValueChange={(value) => setFilters(prev => ({ 
-                ...prev, 
-                type: value === 'all_types' ? undefined : value
-              }))}
-              disabled={!filters.flow || !filters.feature}
-            >
-              <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
-                <SelectValue placeholder="All types" />
-              </SelectTrigger>
-              <SelectContent className="bg-slate-700 border-slate-600">
-                <SelectItem value="all_types" className="text-white">All types</SelectItem>
-                {filters.flow && filters.feature && 
-                  getTypesByFlowFeatureMode(prompts, filters.flow, filters.feature, filters.mode || 'chat').map((type) => (
-                    <SelectItem key={type} value={type} className="text-white">
-                      {type.replace(/_/g, ' ')}
-                    </SelectItem>
-                  ))
-                }
-              </SelectContent>
-            </Select>
+            <Input
+              placeholder="Filter by prompt description..."
+              value={filters.promptDescription || ""}
+              onChange={(e) =>
+                setFilters(prev => ({
+                  ...prev,
+                  promptDescription: e.target.value
+                }))
+              }
+              className="bg-slate-700 border-slate-600 text-white"
+            />
           </div>
         </CardContent>
       </Card>
@@ -762,7 +816,9 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                 <FileText className="h-12 w-12 mx-auto mb-4 text-slate-400" />
                 <p className="text-slate-400 text-lg">No prompts found</p>
                 <p className="text-slate-500 text-sm">
-                  {Object.keys(filters).some(key => filters[key as keyof PromptFilterState])
+                  {Object.keys(filters).some(
+                    key => (filters as any)[key as keyof PromptFilterState]
+                  )
                     ? 'Try adjusting your filters or create a new prompt'
                     : 'Create your first prompt to get started'
                   }
@@ -771,7 +827,10 @@ export default function PromptManager({ environment }: PromptManagerProps) {
             </Card>
           ) : (
             filteredPrompts.map((prompt) => (
-              <Card key={`${prompt.promptId}-${prompt.version}`} className="bg-slate-800/50 backdrop-blur-sm border-slate-700">
+              <Card
+                key={`${prompt.promptId}-${prompt.version}`}
+                className="bg-slate-800/50 backdrop-blur-sm border-slate-700"
+              >
                 <CardHeader>
                   <div className="flex justify-between items-start">
                     <div className="space-y-2">
@@ -780,7 +839,15 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                         <Badge variant="secondary" className="bg-blue-600 text-white">
                           v{prompt.version}
                         </Badge>
-                        <Badge variant="outline" className={`${prompt.mode === 'chat' ? 'border-green-500 text-green-400' : 'border-purple-500 text-purple-400'}`}>
+                        <Badge
+                          variant="outline"
+                          className={`${
+                            prompt.mode === 'Stormee-normal' ||
+                            prompt.mode === 'Stormee-Cra'
+                              ? 'border-purple-500 text-purple-400'
+                              : 'border-green-500 text-green-400'
+                          }`}
+                        >
                           {prompt.mode}
                         </Badge>
                       </div>
@@ -790,9 +857,9 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                           {prompt.flow}
                         </span>
                         <span>→</span>
-                        <span>{prompt.feature}</span>
+                        <span>{prompt.promptTitle}</span>
                         <span>→</span>
-                        <span>{prompt.type}</span>
+                        <span>{prompt.promptDescription}</span>
                       </div>
                     </div>
                     
@@ -884,7 +951,10 @@ export default function PromptManager({ environment }: PromptManagerProps) {
             
             <div className="space-y-4">
               {versions.map((version) => (
-                <Card key={`${version.promptId}-${version.version}`} className="bg-slate-700/50">
+                <Card
+                  key={`${version.promptId}-${version.version}`}
+                  className="bg-slate-700/50"
+                >
                   <CardHeader>
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-2">
@@ -916,7 +986,9 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleDelete(version.promptId, version.version)}
+                          onClick={() =>
+                            handleDelete(version.promptId, version.version)
+                          }
                           className="border-red-600 text-red-400 hover:bg-red-900/20"
                         >
                           <Trash2 className="mr-1 h-3 w-3" />

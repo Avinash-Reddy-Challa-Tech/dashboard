@@ -38,14 +38,17 @@ export const getArtifactUrl = (artifactId: string, environment: Environment, mod
 
 // New Prompt Management Types
 export interface PromptVersion {
-  _id?: string;  // MongoDB ObjectId as string
+  _id?: string;
   promptId: string;
   flow: string;
-  feature: string;
-  mode: 'chat' | 'stormee';
-  type: string;
+  promptTitle: string;
+
+  mode: 'CRA' | 'Userstory' | 'MMVF' | 'Stormee-normal' | 'Stormee-Cra';
+  promptDescription: string;
+
   version: number;
   prompt: string;
+
   metadata: {
     author?: string;
     changelog?: string;
@@ -53,6 +56,7 @@ export interface PromptVersion {
     displayDate?: string;
     displayTime?: string;
   };
+
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }
@@ -60,10 +64,11 @@ export interface PromptVersion {
 export interface PromptFormData {
   promptId: string;
   flow: string;
-  feature: string;
-  mode: 'chat' | 'stormee';
-  type: string;
+  promptTitle: string;
+  mode: 'CRA' | 'Userstory' | 'MMVF' | 'Stormee-normal' | 'Stormee-Cra';
+  promptDescription: string;
   prompt: string;
+
   metadata: {
     author?: string;
     changelog?: string;
@@ -73,9 +78,9 @@ export interface PromptFormData {
 
 export interface PromptFilterState {
   flow?: string;
-  feature?: string;
-  mode?: 'chat' | 'stormee';
-  type?: string;
+  promptTitle?: string;
+  mode?: 'CRA' | 'Userstory' | 'MMVF' | 'Stormee-normal' | 'Stormee-Cra';
+  promptDescription?: string;
   search?: string;
 }
 
@@ -83,7 +88,7 @@ export interface PromptFilterState {
 export const USER_STORY_TYPES = [
   'Backend Technical User Story',
   'Enhance a feature',
-  'Document a feature', 
+  'Document a feature',
   'Fix a bug',
   'Architecture Diagram Description',
   'Knowledge Base Documentation',
@@ -100,11 +105,11 @@ export const USER_STORY_TYPES = [
 
 export type UserStoryType = typeof USER_STORY_TYPES[number];
 
-// Interface for dynamic flow/feature discovery
+// Interface for dynamic flow/promptTitle discovery
 export interface FlowFeatureStructure {
   flows: string[];
-  flowFeatures: Record<string, string[]>; // flow -> features[]
-  flowFeatureModeTypes: Record<string, Record<string, Record<string, string[]>>>; // flow -> feature -> mode -> types[]
+  flowFeatures: Record<string, string[]>;
+  flowFeatureModeTypes: Record<string, Record<string, Record<string, string[]>>>;
 }
 
 // Helper functions for dynamic data from existing prompts
@@ -116,30 +121,28 @@ export const getUniqueFlows = (prompts: PromptVersion[]): string[] => {
 export const getFeaturesByFlow = (prompts: PromptVersion[], flow: string): string[] => {
   const features = prompts
     .filter(p => p.flow === flow)
-    .map(p => p.feature)
+    .map(p => p.promptTitle)
     .filter(Boolean);
   return [...new Set(features)].sort();
 };
 
 export const getTypesByFlowFeatureMode = (
-  prompts: PromptVersion[], 
-  flow: string, 
-  feature: string, 
-  mode: 'chat' | 'stormee'
+  prompts: PromptVersion[],
+  flow: string,
+  promptTitle: string,
+  mode: 'CRA' | 'Userstory' | 'MMVF' | 'Stormee-normal' | 'Stormee-Cra'
 ): string[] => {
   const types = prompts
-    .filter(p => p.flow === flow && p.feature === feature && p.mode === mode)
-    .map(p => p.type)
+    .filter(p => p.flow === flow && p.promptTitle === promptTitle && p.mode === mode)
+    .map(p => p.promptDescription)
     .filter(Boolean);
-  
-  // Add UserStoryTypes if this is a userstory related prompt
+
   const uniqueTypes = [...new Set(types)].sort();
-  
-  // If no types found, suggest some common ones
+
   if (uniqueTypes.length === 0) {
     return ['userstory_generator', 'acceptance_criteria', 'test_scenarios'];
   }
-  
+
   return uniqueTypes;
 };
 
@@ -148,18 +151,18 @@ export const isValidUserStoryType = (type: string): boolean => {
   return USER_STORY_TYPES.includes(type as UserStoryType);
 };
 
-export const normalizePromptId = (flow: string, feature: string, mode: string, type: string): string => {
-  return `${flow}-${feature}-${mode}-${type}`
+export const normalizePromptId = (flow: string, promptTitle: string, mode: string, promptDescription: string): string => {
+  return `${flow}-${promptTitle}-${mode}-${promptDescription}`
     .toLowerCase()
     .replace(/[^a-z0-9-]/g, '-')
     .replace(/-+/g, '-')
-    .replace(/^-+|-+$/g, ''); // Remove leading/trailing dashes
+    .replace(/^-+|-+$/g, '');
 };
 
 // Common type suggestions (can be extended)
 export const COMMON_PROMPT_TYPES = [
   'userstory_generator',
-  'acceptance_criteria', 
+  'acceptance_criteria',
   'test_scenarios',
   'documentation_generator',
   'code_review',
@@ -170,7 +173,6 @@ export const COMMON_PROMPT_TYPES = [
   'technical_analysis'
 ];
 
-// Empty placeholder functions for when structure needs to be built
 export const createNewFlow = (flowName: string): string => {
   return flowName.toLowerCase().replace(/[^a-z0-9]/g, '_');
 };
