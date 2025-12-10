@@ -65,6 +65,15 @@ interface PromptManagerProps {
 // Backend API base URL
 const API_BASE_URL = 'http://localhost:8000/backend/userstory_prompts';
 
+// Mode options used in the Mode dropdown (base predefined list)
+const MODE_OPTIONS: PromptFormData["mode"][] = [
+  'CRA',
+  'Userstory',
+  'MMVF',
+  'Stormee-normal',
+  'Stormee-Cra',
+];
+
 export default function PromptManager({ environment }: PromptManagerProps) {
   const [prompts, setPrompts] = useState<PromptVersion[]>([]);
   const [loading, setLoading] = useState(false);
@@ -75,10 +84,11 @@ export default function PromptManager({ environment }: PromptManagerProps) {
   const [viewingVersions, setViewingVersions] = useState<string | null>(null);
   const [versions, setVersions] = useState<PromptVersion[]>([]);
   
-  // Dynamic flow/promptTitle data
+  // Dynamic flow/promptTitle/mode data
   const [availableFlows, setAvailableFlows] = useState<string[]>([]);
   const [availablePromptTitles, setAvailablePromptTitles] = useState<string[]>([]);
   const [availablePromptDescriptions, setAvailablePromptDescriptions] = useState<string[]>([]);
+  const [availableModes, setAvailableModes] = useState<string[]>(MODE_OPTIONS); // 👈 NEW: dynamic modes (predefined + custom)
   
   // Form state
   const [formData, setFormData] = useState<PromptFormData>({
@@ -142,11 +152,24 @@ export default function PromptManager({ environment }: PromptManagerProps) {
       
       setPrompts(promptsData);
       setAvailableFlows(getUniqueFlows(promptsData));
-      
+
+      // 👇 NEW: build dynamic modes list (predefined + custom from DB)
+      const modesFromPrompts = promptsData
+        .map((p) => p.mode)
+        .filter((m): m is string => !!m);
+      const dynamicModes = Array.from(
+        new Set<string>([
+          ...MODE_OPTIONS,
+          ...modesFromPrompts,
+        ])
+      );
+      setAvailableModes(dynamicModes);
+
     } catch (err) {
       console.error('Error loading prompts:', err);
       setError(err instanceof Error ? err.message : 'Failed to load prompts');
       setPrompts([]);
+      // Keep availableModes as is if loading fails
     } finally {
       setLoading(false);
     }
@@ -212,7 +235,7 @@ export default function PromptManager({ environment }: PromptManagerProps) {
   // ===========================
   useEffect(() => {
     loadPrompts();
-  }, [environment, filters]);
+  }, [environment, filters]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ===========================
   // Handle form submission
@@ -259,13 +282,34 @@ export default function PromptManager({ environment }: PromptManagerProps) {
         },
         body: JSON.stringify(payload),
       });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || errorData.detail || 'Failed to save prompt');
+
+      // Try to parse JSON (even on non-2xx so we can read `exists`)
+      let result: any = null;
+      try {
+        result = await response.json();
+      } catch (parseErr) {
+        // ignore parse error; result stays null
       }
-      
-      // Reset form and reload prompts
+
+      // ✅ First: handle the "record already exists" case regardless of status code
+      if (!isEditing && result && result.exists) {
+        alert(
+          result.message ||
+          'Record already exists with this flow, mode, and promptTitle combination'
+        );
+        // Don't close the dialog – let user adjust values
+        return;
+      }
+
+      // If response is not ok and not a handled "exists" case, throw error
+      if (!response.ok) {
+        throw new Error(
+          (result && (result.error || result.detail || result.message)) ||
+          'Failed to save prompt'
+        );
+      }
+
+      // Normal success path
       setFormData({
         promptId: '',
         flow: '',
@@ -409,7 +453,7 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                     {availableFlows.length > 0 && (
                       <Select
                         value={availableFlows.includes(formData.flow) ? formData.flow : 'none_selected'}
-                        onValueChange={(value) => {
+                        onValueChange={(value: string) => {
                           if (value === 'custom' || value === 'none_selected') return;
                           setFormData(prev => ({ ...prev, flow: value }));
                         }}
@@ -453,7 +497,7 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                             ? formData.promptTitle
                             : 'none_selected'
                         }
-                        onValueChange={(value) => {
+                        onValueChange={(value: string) => {
                           if (value === 'custom' || value === 'none_selected') return;
                           setFormData(prev => ({ ...prev, promptTitle: value }));
                         }}
@@ -492,42 +536,55 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                   </div>
                 </div>
                 
-                {/* Mode */}
+                {/* Mode - existing options + custom from DB + free text */}
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-white">Mode *</label>
-                  <Select
-                    value={formData.mode}
-                    onValueChange={(
-                      value:
-                        | 'CRA'
-                        | 'Userstory'
-                        | 'MMVF'
-                        | 'Stormee-normal'
-                        | 'Stormee-Cra'
-                    ) => setFormData(prev => ({ ...prev, mode: value }))}
-                    required
-                  >
-                    <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
-                      <SelectValue placeholder="Select mode" />
-                    </SelectTrigger>
-                    <SelectContent className="bg-slate-700 border-slate-600">
-                      <SelectItem value="CRA" className="text-white">
-                        CRA
-                      </SelectItem>
-                      <SelectItem value="Userstory" className="text-white">
-                        Userstory
-                      </SelectItem>
-                      <SelectItem value="MMVF" className="text-white">
-                        MMVF
-                      </SelectItem>
-                      <SelectItem value="Stormee-normal" className="text-white">
-                        Stormee (Normal)
-                      </SelectItem>
-                      <SelectItem value="Stormee-Cra" className="text-white">
-                        Stormee (CRA)
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <div className="space-y-2">
+                    <Select
+                      value={
+                        availableModes.includes(formData.mode as string)
+                          ? formData.mode
+                          : 'none_selected'
+                      }
+                      onValueChange={(value: string) => {
+                        if (value === 'custom' || value === 'none_selected') return;
+                        setFormData(prev => ({
+                          ...prev,
+                          mode: value as PromptFormData['mode'],
+                        }));
+                      }}
+                      required
+                    >
+                      <SelectTrigger className="bg-slate-700 border-slate-600 text-white">
+                        <SelectValue placeholder="Select mode" />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-700 border-slate-600">
+                        <SelectItem value="none_selected" className="text-slate-400 italic">
+                          Select existing mode...
+                        </SelectItem>
+                        {availableModes.map((mode) => (
+                          <SelectItem key={mode} value={mode} className="text-white">
+                            {mode}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="custom" className="text-blue-400 font-medium">
+                          + Create New Mode
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      value={formData.mode}
+                      onChange={(e) =>
+                        setFormData(prev => ({
+                          ...prev,
+                          mode: e.target.value as PromptFormData['mode'],
+                        }))
+                      }
+                      placeholder="Or enter new mode"
+                      className="bg-slate-700 border-slate-600 text-white"
+                      required
+                    />
+                  </div>
                 </div>
                 
                 {/* Prompt Description - Free text only */}
@@ -717,6 +774,7 @@ export default function PromptManager({ environment }: PromptManagerProps) {
               </SelectContent>
             </Select>
             
+            {/* Mode filter – uses dynamic availableModes */}
             <Select
               value={filters.mode || 'all_modes'}
               onValueChange={(value) =>
@@ -725,12 +783,7 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                   mode:
                     value === 'all_modes'
                       ? undefined
-                      : (value as
-                          | 'CRA'
-                          | 'Userstory'
-                          | 'MMVF'
-                          | 'Stormee-normal'
-                          | 'Stormee-Cra')
+                      : (value as PromptFormData['mode'])
                 }))
               }
             >
@@ -741,21 +794,11 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                 <SelectItem value="all_modes" className="text-white">
                   All modes
                 </SelectItem>
-                <SelectItem value="CRA" className="text-white">
-                  CRA
-                </SelectItem>
-                <SelectItem value="Userstory" className="text-white">
-                  Userstory
-                </SelectItem>
-                <SelectItem value="MMVF" className="text-white">
-                  MMVF
-                </SelectItem>
-                <SelectItem value="Stormee-normal" className="text-white">
-                  Stormee (Normal)
-                </SelectItem>
-                <SelectItem value="Stormee-Cra" className="text-white">
-                  Stormee (CRA)
-                </SelectItem>
+                {availableModes.map((mode) => (
+                  <SelectItem key={mode} value={mode} className="text-white">
+                    {mode}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             
@@ -822,7 +865,8 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                   <div className="flex justify-between items-start">
                     <div className="space-y-2">
                       <div className="flex items-center gap-2">
-                        <CardTitle className="text-white">{prompt.promptId}</CardTitle>
+                        {/* Title shows promptTitle instead of promptId */}
+                        <CardTitle className="text-white">{prompt.promptTitle}</CardTitle>
                         <Badge variant="secondary" className="bg-blue-600 text-white">
                           v{prompt.version}
                         </Badge>
