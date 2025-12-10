@@ -828,7 +828,7 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                   placeholder="Enter your prompt content..."
                   required
                   rows={8}
-                  className="bg-slate-700 border-slate-600 text-white"
+                  className="bg-slate-700 border-slate-600 text-white max-h-40 overflow-y-auto"
                 />
               </div>
 
