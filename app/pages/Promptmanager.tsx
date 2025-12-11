@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useMemo } from "react";
+import dynamic from "next/dynamic";
 import {
   Plus,
   Search,
@@ -50,6 +51,11 @@ import {
   normalizePromptId,
 } from "./types";
 
+// Monaco Editor (lazy loaded, client-side only)
+const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
+  ssr: false,
+});
+
 interface PromptManagerProps {
   environment: Environment;
 }
@@ -65,6 +71,16 @@ const MODE_OPTIONS: PromptFormData["mode"][] = [
   "Stormee-normal",
   "Stormee-Cra",
 ];
+
+interface PromptViewerState {
+  promptId: string;
+  title?: string;
+  version?: number;
+  mode?: string;
+  flow?: string;
+  description?: string;
+  content: string;
+}
 
 /**
  * Helper to determine if any filter is active.
@@ -265,6 +281,11 @@ export default function PromptManager({ environment }: PromptManagerProps) {
   const [viewingVersions, setViewingVersions] = useState<string | null>(null);
   const [versions, setVersions] = useState<PromptVersion[]>([]);
 
+  // Prompt Viewer (Monaco) state
+  const [isPromptViewerOpen, setIsPromptViewerOpen] = useState(false);
+  const [promptViewerData, setPromptViewerData] =
+    useState<PromptViewerState | null>(null);
+
   // Dynamic flow/promptTitle/mode data
   const [availableFlows, setAvailableFlows] = useState<string[]>([]);
   const [availablePromptTitles, setAvailablePromptTitles] = useState<string[]>(
@@ -294,6 +315,22 @@ export default function PromptManager({ environment }: PromptManagerProps) {
   const [filters, setFilters] = useState<PromptFilterState>({});
 
   // ======================================
+  // Helper: open prompt content in Monaco editor
+  // ======================================
+  const openPromptInEditor = (prompt: PromptVersion) => {
+    setPromptViewerData({
+      promptId: prompt.promptId,
+      title: prompt.promptTitle,
+      version: prompt.version,
+      mode: prompt.mode,
+      flow: prompt.flow,
+      description: prompt.promptDescription,
+      content: prompt.prompt,
+    });
+    setIsPromptViewerOpen(true);
+  };
+
+  // ======================================
   // Load prompts and extract dynamic structure
   // ======================================
   const loadPrompts = async () => {
@@ -301,11 +338,6 @@ export default function PromptManager({ environment }: PromptManagerProps) {
     setError(null);
 
     try {
-      // IMPORTANT CHANGE:
-      // We ALWAYS fetch ALL prompt versions from backend.
-      // We do NOT pass filters to backend anymore, because:
-      // - Default view: we want to dedupe client-side (only latest per promptId).
-      // - Filtered view: we want ALL matching versions, also client-side.
       const url = `${API_BASE_URL}/prompt-version`;
 
       const response = await fetch(url, {
@@ -354,9 +386,6 @@ export default function PromptManager({ environment }: PromptManagerProps) {
   // ======================================
   const loadVersions = async (promptId: string) => {
     try {
-      // IMPORTANT CHANGE:
-      // We already have ALL versions in `prompts` state.
-      // So we derive versions for this promptId in-memory instead of hitting backend.
       const versionsData = prompts
         .filter((p) => p.promptId === promptId)
         .sort((a, b) => {
@@ -435,9 +464,7 @@ export default function PromptManager({ environment }: PromptManagerProps) {
         },
       };
 
-      // IMPORTANT:
-      // - For CREATE (POST): we do NOT send promptId (backend will generate UUID)
-      // - For EDIT (PUT): we MUST send the existing promptId so backend versions correctly
+      // For EDIT (PUT): we MUST send the existing promptId so backend versions correctly
       if (isEditing && formData.promptId) {
         payload.promptId = formData.promptId;
       }
@@ -600,7 +627,9 @@ export default function PromptManager({ environment }: PromptManagerProps) {
           <DialogContent className="bg-slate-800 border-slate-700 max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-white">
-                {isEditing ? "Update Prompt (Create New Version)" : "Create New Prompt"}
+                {isEditing
+                  ? "Update Prompt (Create New Version)"
+                  : "Create New Prompt"}
               </DialogTitle>
             </DialogHeader>
 
@@ -619,7 +648,8 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                             : "none_selected"
                         }
                         onValueChange={(value: string) => {
-                          if (value === "custom" || value === "none_selected") return;
+                          if (value === "custom" || value === "none_selected")
+                            return;
                           setFormData((prev) => ({ ...prev, flow: value }));
                         }}
                       >
@@ -677,7 +707,8 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                             : "none_selected"
                         }
                         onValueChange={(value: string) => {
-                          if (value === "custom" || value === "none_selected") return;
+                          if (value === "custom" || value === "none_selected")
+                            return;
                           setFormData((prev) => ({ ...prev, promptTitle: value }));
                         }}
                       >
@@ -850,7 +881,9 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-white">Token Count</label>
+                  <label className="text-sm font-medium text-white">
+                    Token Count
+                  </label>
                   <Input
                     type="number"
                     value={formData.metadata.tokens || 0}
@@ -1146,6 +1179,15 @@ export default function PromptManager({ environment }: PromptManagerProps) {
                           : prompt.prompt}
                       </pre>
                     </div>
+                    {prompt.prompt.length > 500 && (
+                      <button
+                        type="button"
+                        onClick={() => openPromptInEditor(prompt)}
+                        className="mt-2 text-xs font-medium text-blue-400 hover:text-blue-300 hover:underline"
+                      >
+                        View full prompt in editor
+                      </button>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
@@ -1183,7 +1225,12 @@ export default function PromptManager({ environment }: PromptManagerProps) {
 
       {/* Versions Modal */}
       {viewingVersions && (
-        <Dialog open={!!viewingVersions} onOpenChange={() => setViewingVersions(null)}>
+        <Dialog
+          open={!!viewingVersions}
+          onOpenChange={(open) => {
+            if (!open) setViewingVersions(null);
+          }}
+        >
           <DialogContent className="bg-slate-800 border-slate-700 max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="text-white flex items-center gap-2">
@@ -1192,72 +1239,146 @@ export default function PromptManager({ environment }: PromptManagerProps) {
               </DialogTitle>
             </DialogHeader>
 
-            <div className="space-y-4">
+            <div className="space-y-6 relative pl-6 border-l border-slate-700">
               {versions.map((version) => (
-                <Card
+                <div
                   key={`${version.promptId}-${version.version}`}
-                  className="bg-slate-700/50"
+                  className="relative bg-slate-700/40 border border-slate-600 rounded-xl p-5 shadow-lg"
                 >
-                  <CardHeader>
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          variant="secondary"
-                          className="bg-blue-600 text-white"
-                        >
-                          v{version.version}
-                        </Badge>
-                        <span className="text-sm text-slate-400">
-                          {version.metadata?.displayDate}{" "}
-                          {version.metadata?.displayTime}
+                  {/* Timeline dot */}
+                  <div className="absolute -left-3 top-6 h-4 w-4 rounded-full bg-blue-500 shadow-md"></div>
+
+                  {/* Header */}
+                  <div className="flex justify-between items-center mb-3">
+                    <div className="flex items-center gap-3">
+                      <Badge
+                        variant="secondary"
+                        className="bg-blue-600 text-white px-3 py-1 text-sm rounded-md"
+                      >
+                        v{version.version}
+                      </Badge>
+
+                      <span className="text-xs text-slate-400">
+                        {version.metadata?.displayDate} ·{" "}
+                        {version.metadata?.displayTime}
+                      </span>
+
+                      {version.metadata?.author && (
+                        <span className="text-xs text-slate-400">
+                          by {version.metadata.author}
                         </span>
-                        {version.metadata?.author && (
-                          <span className="text-sm text-slate-400">
-                            by {version.metadata.author}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            setViewingVersions(null);
-                            handleEdit(version);
-                          }}
-                          className="border-slate-600 text-slate-300 hover:bg-slate-700"
-                        >
-                          <Edit className="mr-1 h-3 w-3" />
-                          Use as Template
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() =>
-                            handleDelete(version.promptId, version.version)
-                          }
-                          className="border-red-600 text-red-400 hover:bg-red-900/20"
-                        >
-                          <Trash2 className="mr-1 h-3 w-3" />
-                          Delete
-                        </Button>
-                      </div>
+                      )}
                     </div>
-                  </CardHeader>
-                  <CardContent>
-                    {version.metadata?.changelog && (
-                      <p className="text-sm text-slate-400 mb-2 italic">
-                        Change: {version.metadata.changelog}
-                      </p>
-                    )}
-                    <div className="bg-slate-900/50 rounded-lg p-3 max-h-40 overflow-y-auto">
-                      <pre className="text-sm text-slate-300 whitespace-pre-wrap">
-                        {version.prompt}
-                      </pre>
+
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setViewingVersions(null);
+                          handleEdit(version);
+                        }}
+                        className="border-slate-500 text-slate-300 hover:bg-slate-600/60"
+                      >
+                        <Edit className="mr-1 h-3 w-3" />
+                        Use Template
+                      </Button>
+
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          handleDelete(version.promptId, version.version)
+                        }
+                        className="border-red-600 text-red-400 hover:bg-red-900/20"
+                      >
+                        <Trash2 className="mr-1 h-3 w-3" />
+                        Delete
+                      </Button>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+
+                  {/* Changelog */}
+                  {version.metadata?.changelog && (
+                    <p className="text-sm text-blue-300 italic mb-3">
+                      ✨ {version.metadata.changelog}
+                    </p>
+                  )}
+
+                  {/* Prompt Content Preview */}
+                  <div className="bg-slate-900/50 rounded-lg p-4 text-sm max-h-48 overflow-y-auto border border-slate-700/50">
+                    <pre className="text-slate-300 whitespace-pre-wrap">
+                      {version.prompt.length > 600
+                        ? `${version.prompt.substring(0, 600)}...`
+                        : version.prompt}
+                    </pre>
+                  </div>
+                  {version.prompt.length > 600 && (
+                    <button
+                      type="button"
+                      onClick={() => openPromptInEditor(version)}
+                      className="mt-2 text-xs font-medium text-blue-400 hover:text-blue-300 hover:underline"
+                    >
+                      View full prompt in editor
+                    </button>
+                  )}
+                </div>
               ))}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Prompt Viewer (Monaco Editor) */}
+      {promptViewerData && (
+        <Dialog open={isPromptViewerOpen} onOpenChange={setIsPromptViewerOpen}>
+          <DialogContent className="bg-slate-900 border-slate-700 max-w-5xl w-full h-[80vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="text-white flex flex-wrap items-center gap-2">
+                <FileText className="h-4 w-4" />
+                <span>
+                  {promptViewerData.title || "Prompt"}{" "}
+                  {typeof promptViewerData.version === "number"
+                    ? `(v${promptViewerData.version})`
+                    : ""}
+                </span>
+                {promptViewerData.mode && (
+                  <Badge
+                    variant="outline"
+                    className={getModeBadgeClassName(promptViewerData.mode)}
+                  >
+                    {promptViewerData.mode}
+                  </Badge>
+                )}
+                {promptViewerData.flow && (
+                  <Badge variant="secondary" className="bg-slate-700 text-slate-100">
+                    {promptViewerData.flow}
+                  </Badge>
+                )}
+              </DialogTitle>
+            </DialogHeader>
+
+            {promptViewerData.description && (
+              <p className="text-xs text-slate-400 mb-2 px-1">
+                {promptViewerData.description}
+              </p>
+            )}
+
+            <div className="flex-1 min-h-0 mt-2 rounded-lg overflow-hidden border border-slate-700/70">
+              <MonacoEditor
+                defaultLanguage="markdown"
+                theme="vs-dark"
+                value={promptViewerData.content}
+                options={{
+                  readOnly: true,
+                  wordWrap: "on",
+                  minimap: { enabled: false },
+                  scrollBeyondLastLine: false,
+                  fontSize: 13,
+                  lineNumbers: "on",
+                  renderWhitespace: "none",
+                }}
+              />
             </div>
           </DialogContent>
         </Dialog>
