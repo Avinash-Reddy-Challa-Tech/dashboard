@@ -252,7 +252,7 @@ const computeAvailableModes = (
 ): string[] => {
   const modesFromPrompts = prompts
     .map((p) => p.mode)
-    .filter((m): m is string => !!m);
+    .filter((m) => !!m) as string[];
   return Array.from(new Set<string>([...(baseModes || []), ...modesFromPrompts]));
 };
 
